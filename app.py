@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import time, datetime
+from datetime import time
 from src.models.route_models import StopModel
 from src.optimization.route_optimizer import RouteOptimizer
 
@@ -17,22 +17,22 @@ def main():
 
     with st.sidebar:
         st.header("Configuration")
-        # Depot address selection
+        # Depot address selection (radio buttons)
         st.markdown("**Depot Address**")
-        day_program = st.checkbox("Day Program", value=True)
-        other_program = st.checkbox("Other", value=False)
-        depot_address = ""
-        if day_program:
+        depot_option = st.radio(
+            "Select Depot Address",
+            ("Day Program", "Other"),
+            index=0
+        )
+        if depot_option == "Day Program":
             depot_address = "10404 1055 W, South Jordan, UT 84095"
             st.info(f"Depot address set to: {depot_address}")
-        elif other_program:
+        else:
             depot_address = st.text_input(
                 "Enter Depot Address",
                 value="",
                 help="Enter the starting and ending location for all routes"
             )
-        else:
-            st.warning("Please select a depot address option.")
         vehicle_capacity = st.slider(
             "Vehicle Capacity",
             min_value=1,
@@ -40,15 +40,14 @@ def main():
             value=8,
             help="Maximum number of passengers per vehicle"
         )
-        # Route Start Time (default 8:00 AM, 24-hour input)
+        # Route Start Time (AM/PM dropdowns)
         st.markdown("**Route Start Time**")
-        default_time = time(8, 0)
-        start_time = st.time_input(
-            "Select Start Time (enter AM/PM as needed)",
-            value=default_time,
-            help="When the first pickup should begin. Enter time in 24-hour or AM/PM format."
-        )
-        st.caption("Note: If your browser shows a 24-hour clock, you can still enter AM/PM manually if needed.")
+        hour = st.selectbox("Hour", list(range(1, 13)), index=7)
+        minute = st.selectbox("Minute", ["00", "15", "30", "45"], index=0)
+        am_pm = st.selectbox("AM/PM", ["AM", "PM"], index=0)
+        hour_24 = hour % 12 if am_pm == "AM" else (hour % 12) + 12
+        start_time = time(hour_24, int(minute))
+        st.caption(f"Selected start time: {hour}:{minute} {am_pm}")
         st.divider()
         st.subheader("📄 Sample Template")
         sample_csv = (
