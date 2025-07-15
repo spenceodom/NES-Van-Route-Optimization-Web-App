@@ -1,0 +1,152 @@
+﻿NES VAN ROUTE OPTIMIZATION WEB APP – PRODUCT REQUIREMENTS DOCUMENT (PRD)
+Author / PM Owner: Spencer + Product Team
+Version: 1.2  |  Last Updated: 14 Jul 2025
+==========================================
+
+# 0 · BACKGROUND & USER PROBLEMS
+
+---
+
+Area Directors and Schedulers currently spend ≈ 20 min per van manually assembling routes in spreadsheets and Google Maps. The manual workflow leads to mileage waste, late pickups, and weekly frustration. A **self‑serve, browser‑based optimizer** will cut planning time to < 3 min, trim fuel spend by ≥ 10 %, and provide auditable reports for leadership.
+
+# 1 · OBJECTIVES & SCOPE
+
+---
+
+## 1.1 Objectives (SMART & user‑centric)
+
+O‑1  *Create routes fast*  → Planning time/van ≤ 3 min (baseline 20).
+O‑2  *Protect on‑time pickups*  → ≥ 95 % stops inside window.
+O‑3  *Save money*  → Mileage ↓ 10 % within 90 days.
+O‑4  *Delight users*  → NPS > 40 six months post‑launch.
+
+## 1.2 In‑Scope Features (v1.0)
+
+• **Streamlit file‑upload** (drag CSV ≤ 50 rows, template enforced).
+• **Address validation + 24 h geocode cache** (LRU 10 k entries).
+• **Route optimization** with multi‑depot, time‑window & capacity.
+• **Results view**:
+  – Tabular route details (Stop #, Address, ETA, Drive min, Cum miles, Pax).
+  – *Optional* simple map (st.map / pydeck) if API quota allows.
+• **Export** optimized route to XLSX & PDF.
+• **Basic role management** (Director, Scheduler, Admin) via Streamlit Auth.
+• **KPI dashboard** tab (miles saved, API spend, usage logs).
+
+## 1.3 Out‑of‑Scope (future)
+
+– Real‑time re‑routing / traffic updates.
+– Mobile driver navigation.
+– Direct write‑back to HRIS.
+
+# 2 · USER STORIES & ACCEPTANCE CRITERIA
+
+---
+
+U‑01 (Director) Upload & optimize
+• **Given** a valid CSV
+• **When** I click *Optimize*
+• **Then** table (defined columns) + optional map appear < 30 s for ≤ 25 stops.
+
+U‑02 (Director) Export file
+• **Given** optimized results
+• **When** I click *Download XLSX*
+• **Then** file `YYYY‑MM‑DD_route.xlsx` downloads & opens w/o error.
+
+U‑03 (Scheduler) Invalid file feedback
+• **Given** a malformed CSV or addresses with < 85 % geocode success
+• **When** I optimize
+• **Then** the app shows a Streamlit `st.error()` banner specifying row numbers & required fixes.
+
+U‑04 (Scheduler) Late cancellation
+• **Given** a solved route
+• **When** I remove a stop and click *Re‑optimize*
+• **Then** new ETAs generate < 15 s.
+
+U‑05 (Admin) Audit savings
+• **Given** 30 days of data
+• **When** I open *Reports*
+• **Then** baseline vs. optimized miles, fuel \$ saved and API cost display.
+
+U‑06 (IT Admin) Secure secrets
+• **Given** code repo & deployment
+• **Then** no secrets committed; Streamlit Cloud secrets or env vars store API keys restricted by IP.
+
+# 3 · TECHNICAL REQUIREMENTS & CONSTRAINTS (STREAMLIT‑OPTIMIZED)
+
+---
+
+## 3.1 Architecture
+
+| Layer              | Tech                                                                    | Notes                                                                                         |
+| ------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Front‑end + UI** | **Streamlit 1.35** (Python 3.10)                                        | Single‑page app; built‑in widgets & `st.file_uploader`, `st.dataframe`, `st.download_button`. |
+| **Optimization**   | OR‑Tools 9.x                                                            | Imported as Python module inside Streamlit session.                                           |
+| **APIs**           | Google Routes API v2, Geocoding API v1                                  | Version locked; caching layer via Redis.                                                      |
+| **Persistence**    | Supabase Postgres (usage, KPIs)                                         | `psycopg` in Python.                                                                          |
+| **Auth**           | Supabase Auth email link OR Streamlit’s built‑in `st.experimental_auth` | Roles via JWT claims.                                                                         |
+| **Hosting**        | Streamlit Cloud (pilot) → Docker on Google Cloud Run (prod)             | `gunicorn -b 0.0.0.0:8501 streamlit run app.py`                                               |
+| **Map** (optional) | `st.pydeck_chart` with Mapbox token                                     | Adds minimal complexity; can be toggled off by feature flag.                                  |
+
+## 3.2 Key Functional Constraints
+
+• Upload ≤ 200 KB, ≤ 50 stops.
+• Optimize job SLA: 99 % < 30 s.
+• Concurrency: 8 simultaneous sessions (Streamlit Cloud limit) → scale via Cloud Run.
+• Cache: Redis 1 GB, 24 h TTL; target 60 % hit rate.
+• API spend alert at \$60; hard stop at \$75/month.
+• Disaster recovery: nightly DB backup + Cloud Run multi‑region deploy.
+
+## 3.3 Security Controls
+
+• OWASP Top‑10 mitigations (input sanitize, secure cookies, CSRF).
+• Secrets via Streamlit Cloud *Secrets Management* or Google Secret Manager.
+• HTTPS enforced; HSTS.
+• Quarterly dependency scan (Snyk/GitHub Dependabot).
+
+# 4 · SUCCESS METRICS & KPIs
+
+---
+
+| Metric Category | KPI                      | Target    |
+| --------------- | ------------------------ | --------- |
+| Adoption        | Active Areas / total     | ≥ 80 %    |
+| Efficiency      | Avg miles per client/day | ≤ 2.8 mi  |
+| Planner Time    | Avg minutes per van      | ≤ 3 min   |
+| Reliability     | Job error rate           | < 2 %     |
+| Satisfaction    | NPS                      | > 40      |
+| Cost            | Google API spend         | ≤ \$75/mo |
+
+# 5 · RISKS & MITIGATIONS (STREAMLIT CONTEXT)
+
+---
+
+| ID  | Description                                       | Likelihood | Impact | Mitigation                                          | Contingency                                     |
+| --- | ------------------------------------------------- | ---------- | ------ | --------------------------------------------------- | ----------------------------------------------- |
+| R‑1 | Streamlit Cloud resource limits                   | M          | M      | Start on Cloud tier; move to Cloud Run auto‑scaling | Docker‑based deploy scripted.                   |
+| R‑2 | Google Routes price hike                          | M          | H      | Cache; monitor spend                                | Switch to Mapbox + OSRM.                        |
+| R‑3 | Single‑thread Streamlit blocking under heavy load | M          | M      | Use async callbacks; offload OR‑Tools to threadpool | Spin worker microservice (FastAPI) for compute. |
+| R‑4 | Low Director adoption                             | M          | M      | Champion pilot + Loom demo                          | Exec mandate + KPI linkage.                     |
+
+# 6 · IMPLEMENTATION TIMELINE (STREAMLIT)
+
+---
+
+| Phase | Duration | Deliverables | QA Focus | Stakeholder Demos |
+| ----- | -------- | ------------ | -------- | ----------------- |
+
+0. Kick‑off & UX | 1 wk (15‑19 Jul) | Final PRD v1.2, low‑fi layout | Unit test bootstrap | Brief email
+1. Streamlit Core | 1 wk (22‑26 Jul) | File upload, geocode validate, OR‑Tools optimize | Pytest + Screenshot tests | Demo #1 (26 Jul)
+2. Exports + Caching | 1 wk (29 Jul‑2 Aug) | XLSX/PDF export, Redis cache | Unit & perf tests | Demo #2 (2 Aug)
+3. Auth & KPI DB | 1 wk (5‑9 Aug) | Supabase auth + Postgres KPIs | Security checklist | Demo #3 (9 Aug)
+4. Optional Map + Polish | 1 wk (12‑16 Aug) | `st.pydeck_chart`, UI polish | E2E Cypress | Demo #4 (16 Aug)
+5. Pilot (Area 1) | 2 wks (19‑30 Aug) | Live usage, bug fixes | Daily triage | Weekly email
+6. Org‑wide Launch | 1 wk (2‑6 Sep) | Load test, docs, training | Regression | Launch call (5 Sep)
+7. Post‑mortem | 1 wk (Oct 28) | Lessons learned & v1.1 backlog | — | Retro meeting
+
+Total dev: **7 wks** + pilot & post‑mortem.
+
+# 7 · REFERENCE STANDARDS
+
+---
+
+\[1] SMART goals  \[2] INVEST stories  \[3] OWASP ASVS  \[4] Google SRE D/R  \[5] Agile Testing Quadrants

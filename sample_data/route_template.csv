@@ -1,0 +1,6 @@
+stop_id,address,passenger_name,time_window_start,time_window_end,passengers,notes
+1,123 Main St, Anytown, CA 90210,John Smith,08:00,08:30,1,Regular pickup
+2,456 Oak Ave, Anytown, CA 90210,Jane Doe,08:15,08:45,2,Wheelchair accessible
+3,789 Pine St, Anytown, CA 90210,Bob Johnson,08:30,09:00,1,
+4,321 Elm St, Anytown, CA 90210,Alice Brown,08:45,09:15,1,
+5,654 Maple Dr, Anytown, CA 90210,Charlie Wilson,09:00,09:30,3,Family pickup 
