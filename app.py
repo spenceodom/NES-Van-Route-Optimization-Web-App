@@ -81,6 +81,7 @@ def main():
     if master_file is not None:
         try:
             master_df = pd.read_csv(master_file)
+            master_df.columns = [col.lower() for col in master_df.columns]
             st.success(f"✅ Loaded {len(master_df)} individuals from master list.")
             st.dataframe(master_df, use_container_width=True)
             # Step 2: Select individuals for today
