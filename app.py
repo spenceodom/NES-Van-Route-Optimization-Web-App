@@ -36,19 +36,19 @@ def main():
         vehicle_capacity = st.slider(
             "Vehicle Capacity",
             min_value=1,
-            max_value=20,
-            value=15,
+            max_value=8,
+            value=8,
             help="Maximum number of passengers per vehicle"
         )
-        # Route Start Time with AM/PM
+        # Route Start Time (default 8:00 AM, 24-hour input)
         st.markdown("**Route Start Time**")
-        default_time = datetime.strptime("08:00 AM", "%I:%M %p").time()
+        default_time = time(8, 0)
         start_time = st.time_input(
-            "Select Start Time (AM/PM)",
+            "Select Start Time (enter AM/PM as needed)",
             value=default_time,
-            format="%I:%M %p",
-            help="When the first pickup should begin (12-hour clock)"
+            help="When the first pickup should begin. Enter time in 24-hour or AM/PM format."
         )
+        st.caption("Note: If your browser shows a 24-hour clock, you can still enter AM/PM manually if needed.")
         st.divider()
         st.subheader("📄 Sample Template")
         sample_csv = (
