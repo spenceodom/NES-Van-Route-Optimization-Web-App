@@ -13,6 +13,7 @@ st.set_page_config(
 
 MAX_VAN_CAPACITY = 10
 
+
 def main():
     st.title("🚐 NES Van Route Optimizer")
     st.markdown("Optimize daily van routes to save time, fuel, and ensure on-time pickups")
@@ -52,25 +53,6 @@ def main():
         start_time = time(hour_24, int(minute))
         st.caption(f"Selected start time: {hour}:{minute} {am_pm}")
         st.divider()
-        st.subheader("📄 Master List Template")
-        master_list_csv = (
-            "name,address,wheelchair\n"
-            "John Smith,123 Main St, Anytown, CA 90210,N\n"
-            "Jane Doe,456 Oak Ave, Anytown, CA 90210,N\n"
-            "Bob Johnson,789 Pine St, Anytown, CA 90210,Y\n"
-            "Alice Brown,321 Elm St, Anytown, CA 90210,N\n"
-            "Charlie Wilson,654 Maple Dr, Anytown, CA 90210,N\n"
-            "Sam Lee,1000 Apartment Complex, Anytown, CA 90210,Y\n"
-            "Chris Kim,1000 Apartment Complex, Anytown, CA 90210,N\n"
-            "Pat Taylor,1000 Apartment Complex, Anytown, CA 90210,N\n"
-        )
-        st.download_button(
-            label="Download Master List Template",
-            data=master_list_csv,
-            file_name="master_list_template.csv",
-            mime="text/csv",
-            help="Download a sample master list CSV file."
-        )
 
     st.header("Step 1: Upload Master List")
     master_file = st.file_uploader(
@@ -83,23 +65,21 @@ def main():
             master_df = pd.read_csv(master_file)
             master_df.columns = [col.lower() for col in master_df.columns]
             st.success(f"✅ Loaded {len(master_df)} individuals from master list.")
-            st.dataframe(master_df, use_container_width=True)
-            # Step 2: Select individuals for today
+            # Step 2: Select individuals for today (checkbox grid)
             st.header("Step 2: Select Individuals for Transport Today")
             all_names = master_df['name'].tolist()
-            selected_names = st.multiselect(
-                "Select individuals needing transport:",
-                options=all_names
-            )
+            n = len(all_names)
+            cols = st.columns(3)
+            selected_names = []
+            for idx, name in enumerate(all_names):
+                col = cols[idx % 3]
+                if col.checkbox(name, key=f"name_{idx}"):
+                    selected_names.append(name)
             if selected_names:
                 selected_df = master_df[master_df['name'].isin(selected_names)].copy()
-                st.write(f"You selected {len(selected_df)} individuals.")
-                st.dataframe(selected_df, use_container_width=True)
                 # Prepare for optimization: split into wheelchair and regular
                 wheelchair_df = selected_df[selected_df['wheelchair'].astype(str).str.upper() == 'Y']
                 regular_df = selected_df[selected_df['wheelchair'].astype(str).str.upper() != 'Y']
-                st.write(f"Wheelchair van: {len(wheelchair_df)} passengers.")
-                st.write(f"Regular vans: {len(regular_df)} passengers.")
                 # Group regular passengers by address
                 grouped = regular_df.groupby('address')['name'].apply(list).reset_index()
                 stops = []
@@ -126,15 +106,25 @@ def main():
                         wheelchair_stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=True))
                 # Optimize button
                 if st.button("🚀 Optimize Routes"):
-                    st.info("Route optimization logic will be implemented next. (Stops and grouping are ready.)")
-                    st.write("Regular van stops:")
-                    for s in stops:
-                        st.write(f"{s.address}: {len(s.passengers)} passengers - {', '.join(s.passengers)}")
-                    st.write("Wheelchair van stops:")
-                    for s in wheelchair_stops:
-                        st.write(f"{s.address}: {len(s.passengers)} passengers - {', '.join(s.passengers)}")
-                    # Placeholder for XLSX export
-                    st.info("XLSX export for both routes will be implemented next.")
+                    # Assign regular stops to vans (simple round-robin for now)
+                    van_routes = [[] for _ in range(number_of_vans)]
+                    stop_idx = 0
+                    for stop in stops:
+                        van_routes[stop_idx % number_of_vans].append(stop)
+                        stop_idx += 1
+                    st.subheader("Regular Van Routes")
+                    for i, route in enumerate(van_routes):
+                        st.markdown(f"**Van {i+1}:**")
+                        if not route:
+                            st.write("No stops assigned.")
+                        for s in route:
+                            st.write(f"{s.address}: {len(s.passengers)} passengers - {', '.join(s.passengers)}")
+                    st.subheader("Wheelchair Van Route")
+                    if wheelchair_stops:
+                        for s in wheelchair_stops:
+                            st.write(f"{s.address}: {len(s.passengers)} passengers - {', '.join(s.passengers)}")
+                    else:
+                        st.write("No wheelchair passengers selected.")
         except Exception as e:
             st.error(f"❌ Failed to read or process master list: {str(e)}")
 
