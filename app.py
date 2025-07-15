@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import time
+from datetime import time, datetime
+from src.models.route_models import StopModel
+from src.optimization.route_optimizer import RouteOptimizer
 
 st.set_page_config(
     page_title="NES Van Route Optimizer",
@@ -15,11 +17,22 @@ def main():
 
     with st.sidebar:
         st.header("Configuration")
-        depot_address = st.text_input(
-            "Depot Address",
-            value="NES Main Office, 123 Business St, Anytown, CA 90210",
-            help="Starting and ending location for all routes"
-        )
+        # Depot address selection
+        st.markdown("**Depot Address**")
+        day_program = st.checkbox("Day Program", value=True)
+        other_program = st.checkbox("Other", value=False)
+        depot_address = ""
+        if day_program:
+            depot_address = "10404 1055 W, South Jordan, UT 84095"
+            st.info(f"Depot address set to: {depot_address}")
+        elif other_program:
+            depot_address = st.text_input(
+                "Enter Depot Address",
+                value="",
+                help="Enter the starting and ending location for all routes"
+            )
+        else:
+            st.warning("Please select a depot address option.")
         vehicle_capacity = st.slider(
             "Vehicle Capacity",
             min_value=1,
@@ -27,10 +40,14 @@ def main():
             value=15,
             help="Maximum number of passengers per vehicle"
         )
+        # Route Start Time with AM/PM
+        st.markdown("**Route Start Time**")
+        default_time = datetime.strptime("08:00 AM", "%I:%M %p").time()
         start_time = st.time_input(
-            "Route Start Time",
-            value=time(8, 0),
-            help="When the first pickup should begin"
+            "Select Start Time (AM/PM)",
+            value=default_time,
+            format="%I:%M %p",
+            help="When the first pickup should begin (12-hour clock)"
         )
         st.divider()
         st.subheader("📄 Sample Template")
@@ -61,9 +78,19 @@ def main():
             df = pd.read_csv(uploaded_file)
             st.success(f"✅ Successfully loaded {len(df)} stops")
             st.dataframe(df, use_container_width=True)
-            st.info("Optimization logic will be added here.")
+            # Convert DataFrame rows to StopModel objects
+            stops = [StopModel(**row) for row in df.to_dict(orient='records')]
+            if st.button("🚀 Optimize Route"):
+                with st.spinner("Optimizing route..."):
+                    optimizer = RouteOptimizer(depot_address, vehicle_capacity)
+                    result = optimizer.optimize_route(stops, start_time)
+                    if result['is_feasible']:
+                        st.success(f"✅ Route optimized! Total distance: {result['total_distance']:.2f}")
+                        st.write("Optimized stop order (by index):", result['route_sequence'])
+                    else:
+                        st.error("❌ No feasible route found.")
         except Exception as e:
-            st.error(f"❌ Failed to read CSV: {str(e)}")
+            st.error(f"❌ Failed to read or process CSV: {str(e)}")
 
 if __name__ == "__main__":
     main() 
