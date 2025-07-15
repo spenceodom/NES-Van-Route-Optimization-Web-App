@@ -2,19 +2,20 @@ from typing import List, Optional
 from datetime import time, datetime
 from pydantic import BaseModel, Field
 
-class StopModel(BaseModel):
-    stop_id: str
+class IndividualModel(BaseModel):
+    name: str
     address: str
-    passenger_name: str
-    time_window_start: time
-    time_window_end: time
-    passengers: int
-    notes: Optional[str] = ""
+    wheelchair: bool
+
+class StopModel(BaseModel):
+    address: str
+    passengers: List[str]  # List of names
+    wheelchair: bool = False
 
 class RouteRequest(BaseModel):
     stops: List[StopModel]
     depot_address: str
-    vehicle_capacity: int = 15
+    number_of_vans: int = 2
     start_time: time = time(8, 0)
 
 class RouteResponse(BaseModel):
