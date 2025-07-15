@@ -33,12 +33,13 @@ def main():
                 value="",
                 help="Enter the starting and ending location for all routes"
             )
-        vehicle_capacity = st.slider(
-            "Vehicle Capacity",
+        # Number of vans
+        number_of_vans = st.slider(
+            "Number of Vans",
             min_value=1,
             max_value=8,
-            value=8,
-            help="Maximum number of passengers per vehicle"
+            value=2,
+            help="How many vans are available for this route?"
         )
         # Route Start Time (AM/PM dropdowns)
         st.markdown("**Route Start Time**")
@@ -81,7 +82,7 @@ def main():
             stops = [StopModel(**row) for row in df.to_dict(orient='records')]
             if st.button("🚀 Optimize Route"):
                 with st.spinner("Optimizing route..."):
-                    optimizer = RouteOptimizer(depot_address, vehicle_capacity)
+                    optimizer = RouteOptimizer(depot_address, number_of_vans)
                     result = optimizer.optimize_route(stops, start_time)
                     if result['is_feasible']:
                         st.success(f"✅ Route optimized! Total distance: {result['total_distance']:.2f}")
