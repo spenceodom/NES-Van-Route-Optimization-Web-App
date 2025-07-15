@@ -11,6 +11,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+MAX_VAN_CAPACITY = 10
+
 def main():
     st.title("🚐 NES Van Route Optimizer")
     st.markdown("Optimize daily van routes to save time, fuel, and ensure on-time pickups")
@@ -93,13 +95,45 @@ def main():
                 st.write(f"You selected {len(selected_df)} individuals.")
                 st.dataframe(selected_df, use_container_width=True)
                 # Prepare for optimization: split into wheelchair and regular
-                wheelchair_df = selected_df[selected_df['wheelchair'].str.upper() == 'Y']
-                regular_df = selected_df[selected_df['wheelchair'].str.upper() != 'Y']
+                wheelchair_df = selected_df[selected_df['wheelchair'].astype(str).str.upper() == 'Y']
+                regular_df = selected_df[selected_df['wheelchair'].astype(str).str.upper() != 'Y']
                 st.write(f"Wheelchair van: {len(wheelchair_df)} passengers.")
                 st.write(f"Regular vans: {len(regular_df)} passengers.")
-                # Placeholder for optimize button and logic
+                # Group regular passengers by address
+                grouped = regular_df.groupby('address')['name'].apply(list).reset_index()
+                stops = []
+                for _, row in grouped.iterrows():
+                    stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=False))
+                # Check if any stop exceeds van capacity
+                over_capacity = [s for s in stops if len(s.passengers) > MAX_VAN_CAPACITY]
+                if over_capacity:
+                    st.error(f"❌ One or more stops have more than {MAX_VAN_CAPACITY} passengers. Please adjust your selection.")
+                    for s in over_capacity:
+                        st.warning(f"Address: {s.address} has {len(s.passengers)} passengers.")
+                    return
+                # Check if total demand can be met with available vans
+                total_passengers = sum(len(s.passengers) for s in stops)
+                min_vans_needed = (total_passengers + MAX_VAN_CAPACITY - 1) // MAX_VAN_CAPACITY
+                if min_vans_needed > number_of_vans:
+                    st.error(f"❌ Not enough vans. {min_vans_needed} vans needed for {total_passengers} passengers (max {MAX_VAN_CAPACITY} per van), but only {number_of_vans} vans available.")
+                    return
+                # Prepare wheelchair stops
+                wheelchair_stops = []
+                if not wheelchair_df.empty:
+                    wc_grouped = wheelchair_df.groupby('address')['name'].apply(list).reset_index()
+                    for _, row in wc_grouped.iterrows():
+                        wheelchair_stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=True))
+                # Optimize button
                 if st.button("🚀 Optimize Routes"):
-                    st.info("Route optimization logic will be implemented next.")
+                    st.info("Route optimization logic will be implemented next. (Stops and grouping are ready.)")
+                    st.write("Regular van stops:")
+                    for s in stops:
+                        st.write(f"{s.address}: {len(s.passengers)} passengers - {', '.join(s.passengers)}")
+                    st.write("Wheelchair van stops:")
+                    for s in wheelchair_stops:
+                        st.write(f"{s.address}: {len(s.passengers)} passengers - {', '.join(s.passengers)}")
+                    # Placeholder for XLSX export
+                    st.info("XLSX export for both routes will be implemented next.")
         except Exception as e:
             st.error(f"❌ Failed to read or process master list: {str(e)}")
 
