@@ -13,6 +13,11 @@ st.set_page_config(
 
 MAX_VAN_CAPACITY = 10
 
+def is_wheelchair(val):
+    if pd.isnull(val):
+        return False
+    val_str = str(val).strip().lower()
+    return val_str in ["y", "yes", "true", "1"]
 
 def main():
     st.title("🚐 NES Van Route Optimizer")
@@ -78,8 +83,9 @@ def main():
             if selected_names:
                 selected_df = master_df[master_df['name'].isin(selected_names)].copy()
                 # Prepare for optimization: split into wheelchair and regular
-                wheelchair_df = selected_df[selected_df['wheelchair'].astype(str).str.upper() == 'Y']
-                regular_df = selected_df[selected_df['wheelchair'].astype(str).str.upper() != 'Y']
+                selected_df['is_wheelchair'] = selected_df['wheelchair'].apply(is_wheelchair)
+                wheelchair_df = selected_df[selected_df['is_wheelchair']]
+                regular_df = selected_df[~selected_df['is_wheelchair']]
                 # Group regular passengers by address
                 grouped = regular_df.groupby('address')['name'].apply(list).reset_index()
                 stops = []
