@@ -6,7 +6,7 @@ from src.optimization.route_optimizer import RouteOptimizer
 
 st.set_page_config(
     page_title="NES Van Route Optimizer",
-    page_icon="??",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -106,17 +106,13 @@ def main():
             n = len(all_names)
 
             # Select All / Deselect All functionality
-            col1, col2, col3 = st.columns([1, 1, 2])
-            select_all = col1.button(" Select All", key="select_all")
-            deselect_all = col2.button(" Deselect All", key="deselect_all")
-
-            # Use session state to track selection mode
-            if select_all:
-                st.session_state['select_mode'] = 'all'
-            elif deselect_all:
-                st.session_state['select_mode'] = 'none'
-            elif 'select_mode' not in st.session_state:
-                st.session_state['select_mode'] = 'none'
+            col1, col2, _ = st.columns([1, 1, 2])
+            if col1.button("✅ Select All"):
+                for idx in range(n):
+                    st.session_state[f"name_{idx}"] = True
+            if col2.button("❌ Deselect All"):
+                for idx in range(n):
+                    st.session_state[f"name_{idx}"] = False
 
             # Show current selection status
             total_selected = 0
@@ -125,16 +121,8 @@ def main():
 
             for idx, name in enumerate(all_names):
                 col = cols[idx % 3]
-
-                # Determine if checkbox should be checked
-                checkbox_default = False
-                if st.session_state['select_mode'] == 'all':
-                    checkbox_default = True
-                elif st.session_state['select_mode'] == 'none':
-                    checkbox_default = False
-
-                # Create checkbox with appropriate default
-                if col.checkbox(name, key=f"name_{idx}", value=checkbox_default):
+                checked = st.session_state.get(f"name_{idx}", False)
+                if col.checkbox(name, key=f"name_{idx}", value=checked):
                     selected_names.append(name)
                     total_selected += 1
 
@@ -150,30 +138,91 @@ def main():
                 selected_df['is_wheelchair'] = selected_df['wheelchair'].apply(is_wheelchair)
                 wheelchair_df = selected_df[selected_df['is_wheelchair']]
                 regular_df = selected_df[~selected_df['is_wheelchair']]
-                # Group regular passengers by address
-                grouped = regular_df.groupby('address')['name'].apply(list).reset_index()
-                stops = []
-                for _, row in grouped.iterrows():
-                    stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=False))
-                # Check if any stop exceeds van capacity
-                over_capacity = [s for s in stops if len(s.passengers) > MAX_VAN_CAPACITY]
+                
+                # NEW: Handle wheelchair van constraint
+                # Wheelchair van can carry ALL wheelchair passengers + 1 regular passenger
+                wheelchair_stops = []
+                regular_stops = []
+                wheelchair_van_regular_passenger = None
+                
+                # Process wheelchair passengers (all go to wheelchair van)
+                if not wheelchair_df.empty:
+                    wc_grouped = wheelchair_df.groupby('address')['name'].apply(list).reset_index()
+                    for _, row in wc_grouped.iterrows():
+                        wheelchair_stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=True))
+                
+                # Process regular passengers
+                if not regular_df.empty:
+                    # Group regular passengers by address first
+                    regular_grouped = regular_df.groupby('address')['name'].apply(list).reset_index()
+                    
+                    # Check if we can move 1 regular passenger to wheelchair van
+                    # (only if wheelchair van exists and has capacity)
+                    if wheelchair_stops and len(regular_grouped) > 0:
+                        # Take the first regular passenger for wheelchair van
+                        first_regular_row = regular_grouped.iloc[0]
+                        wheelchair_van_regular_passenger = first_regular_row['name'][0]  # First passenger from first address
+                        
+                        # Remove this passenger from regular processing
+                        remaining_regular_names = []
+                        for _, row in regular_grouped.iterrows():
+                            if row['address'] == first_regular_row['address']:
+                                # Remove the first passenger from this address
+                                remaining_passengers = row['name'][1:] if len(row['name']) > 1 else []
+                                if remaining_passengers:
+                                    remaining_regular_names.extend(remaining_passengers)
+                            else:
+                                remaining_regular_names.extend(row['name'])
+                        
+                        # Create regular stops from remaining passengers
+                        if remaining_regular_names:
+                            remaining_regular_df = regular_df[regular_df['name'].isin(remaining_regular_names)]
+                            remaining_grouped = remaining_regular_df.groupby('address')['name'].apply(list).reset_index()
+                            for _, row in remaining_grouped.iterrows():
+                                regular_stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=False))
+                    else:
+                        # No wheelchair van, all regular passengers go to regular vans
+                        for _, row in regular_grouped.iterrows():
+                            regular_stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=False))
+                
+                # Add the regular passenger to wheelchair van if we have one
+                if wheelchair_van_regular_passenger:
+                    # Find the passenger's address and add them to wheelchair stops
+                    passenger_info = regular_df[regular_df['name'] == wheelchair_van_regular_passenger].iloc[0]
+                    wheelchair_stops.append(StopModel(
+                        address=passenger_info['address'], 
+                        passengers=[wheelchair_van_regular_passenger], 
+                        wheelchair=False
+                    ))
+                
+                # Check capacity constraints for regular vans
+                over_capacity = [s for s in regular_stops if len(s.passengers) > MAX_VAN_CAPACITY]
                 if over_capacity:
                     st.error(f" One or more stops have more than {MAX_VAN_CAPACITY} passengers. Please adjust your selection.")
                     for s in over_capacity:
                         st.warning(f"Address: {s.address} has {len(s.passengers)} passengers.")
                     return
-                # Check if total demand can be met with available vans
-                total_passengers = sum(len(s.passengers) for s in stops)
-                min_vans_needed = (total_passengers + MAX_VAN_CAPACITY - 1) // MAX_VAN_CAPACITY
+                
+                # Check if total regular demand can be met with available vans
+                total_regular_passengers = sum(len(s.passengers) for s in regular_stops)
+                min_vans_needed = (total_regular_passengers + MAX_VAN_CAPACITY - 1) // MAX_VAN_CAPACITY if total_regular_passengers > 0 else 0
                 if min_vans_needed > number_of_vans:
-                    st.error(f" Not enough vans. {min_vans_needed} vans needed for {total_passengers} passengers (max {MAX_VAN_CAPACITY} per van), but only {number_of_vans} vans available.")
+                    st.error(f" Not enough vans. {min_vans_needed} vans needed for {total_regular_passengers} regular passengers (max {MAX_VAN_CAPACITY} per van), but only {number_of_vans} vans available.")
                     return
-                # Prepare wheelchair stops
-                wheelchair_stops = []
-                if not wheelchair_df.empty:
-                    wc_grouped = wheelchair_df.groupby('address')['name'].apply(list).reset_index()
-                    for _, row in wc_grouped.iterrows():
-                        wheelchair_stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=True))
+                
+                # Show passenger summary
+                wheelchair_count = sum(len(stop.passengers) for stop in wheelchair_stops)
+                regular_count = sum(len(stop.passengers) for stop in regular_stops)
+                
+                st.info(f" **Passenger Summary:**")
+                if wheelchair_count > 0:
+                    st.info(f" Wheelchair van: {wheelchair_count} passengers ({len(wheelchair_stops)} stops)")
+                if regular_count > 0:
+                    st.info(f" Regular vans: {regular_count} passengers ({len(regular_stops)} stops, {min_vans_needed} vans needed)")
+                
+                if wheelchair_van_regular_passenger:
+                    st.info(f"? Note: 1 regular passenger ({wheelchair_van_regular_passenger}) will ride in the wheelchair van to maximize efficiency")
+
                 # Optimize button
                 if st.button(" Optimize Routes", disabled=not api_key):
                     if not api_key:
@@ -183,12 +232,12 @@ def main():
                     with st.spinner(" Optimizing routes with real-time traffic data..."):
                         try:
                             # Initialize optimizer with API key
-                            optimizer = RouteOptimizer(depot_address, MAX_VAN_CAPACITY, api_key)
+                            optimizer_regular = RouteOptimizer(depot_address, MAX_VAN_CAPACITY, api_key)
 
                             # Optimize regular routes
-                            if stops:
+                            if regular_stops:
                                 st.subheader("Regular Van Routes")
-                                regular_result = optimizer.optimize_route(stops, start_time, number_of_vans)
+                                regular_result = optimizer_regular.optimize_route(regular_stops, start_time, number_of_vans)
 
                                 if regular_result['geocoding_errors']:
                                     st.warning(" Some addresses could not be geocoded:")
@@ -207,8 +256,8 @@ def main():
 
                                             # Show stops in route order
                                             for stop_idx in route['stops']:
-                                                if 0 <= stop_idx - 1 < len(stops):  # Convert back to 0-based index
-                                                    stop = stops[stop_idx - 1]  # -1 because depot is index 0
+                                                if 0 <= stop_idx - 1 < len(regular_stops):  # Convert back to 0-based index
+                                                    stop = regular_stops[stop_idx - 1]  # -1 because depot is index 0
                                                     st.write(f"   {stop.address}: {len(stop.passengers)} passengers - {', '.join(stop.passengers)}")
 
                                             total_distance += route['distance']
@@ -219,8 +268,10 @@ def main():
                             # Handle wheelchair routes (separate optimization)
                             if wheelchair_stops:
                                 st.subheader("Wheelchair Van Route")
-                                # For wheelchair, we use a single vehicle for now
-                                wheelchair_result = optimizer.optimize_route(wheelchair_stops, start_time, 1)
+                                # For wheelchair van, allow all wheelchair passengers plus at most 1 regular passenger
+                                wc_capacity = sum(len(s.passengers) for s in wheelchair_stops)
+                                optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
+                                wheelchair_result = optimizer_wheelchair.optimize_route(wheelchair_stops, start_time, 1)
 
                                 if wheelchair_result['geocoding_errors']:
                                     for error in wheelchair_result['geocoding_errors']:
@@ -229,11 +280,15 @@ def main():
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
                                     route = wheelchair_result['vehicle_routes'][0]
                                     st.write(f" Distance: {format_distance(route['distance'])} |  Passengers: {route['load']}")
+                                    
+                                    if wheelchair_van_regular_passenger:
+                                        st.info(f"? This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")
 
                                     for stop_idx in route['stops']:
                                         if 0 <= stop_idx - 1 < len(wheelchair_stops):
                                             stop = wheelchair_stops[stop_idx - 1]
-                                            st.write(f"   {stop.address}: {len(stop.passengers)} passengers - {', '.join(stop.passengers)}")
+                                            passenger_type = " wheelchair" if stop.wheelchair else " regular"
+                                            st.write(f"   {stop.address}: {len(stop.passengers)} passengers ({passenger_type}) - {', '.join(stop.passengers)}")
                                 else:
                                     st.write("No wheelchair passengers selected.")
                             else:
