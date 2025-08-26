@@ -42,7 +42,6 @@ def main():
 
     # API Key Configuration
     with st.sidebar:
-        st.header("Configuration")
         # Depot address selection (radio buttons)
         st.markdown("**Depot Address**")
         depot_option = st.radio(
