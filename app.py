@@ -6,7 +6,7 @@ from src.optimization.route_optimizer import RouteOptimizer
 
 st.set_page_config(
     page_title="NES Van Route Optimizer",
-    page_icon="",
+    page_icon="??",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -104,12 +104,46 @@ def main():
             st.header("Step 2: Select Individuals for Transport Today")
             all_names = master_df['name'].tolist()
             n = len(all_names)
+
+            # Select All / Deselect All functionality
+            col1, col2, col3 = st.columns([1, 1, 2])
+            select_all = col1.button(" Select All", key="select_all")
+            deselect_all = col2.button(" Deselect All", key="deselect_all")
+
+            # Use session state to track selection mode
+            if select_all:
+                st.session_state['select_mode'] = 'all'
+            elif deselect_all:
+                st.session_state['select_mode'] = 'none'
+            elif 'select_mode' not in st.session_state:
+                st.session_state['select_mode'] = 'none'
+
+            # Show current selection status
+            total_selected = 0
             cols = st.columns(3)
             selected_names = []
+
             for idx, name in enumerate(all_names):
                 col = cols[idx % 3]
-                if col.checkbox(name, key=f"name_{idx}"):
+
+                # Determine if checkbox should be checked
+                checkbox_default = False
+                if st.session_state['select_mode'] == 'all':
+                    checkbox_default = True
+                elif st.session_state['select_mode'] == 'none':
+                    checkbox_default = False
+
+                # Create checkbox with appropriate default
+                if col.checkbox(name, key=f"name_{idx}", value=checkbox_default):
                     selected_names.append(name)
+                    total_selected += 1
+
+            # Display selection summary
+            if total_selected > 0:
+                st.info(f" {total_selected} of {len(all_names)} individuals selected for transport")
+            else:
+                st.info(f" No individuals selected yet. Click 'Select All' to choose everyone or select individuals manually.")
+
             if selected_names:
                 selected_df = master_df[master_df['name'].isin(selected_names)].copy()
                 # Prepare for optimization: split into wheelchair and regular
