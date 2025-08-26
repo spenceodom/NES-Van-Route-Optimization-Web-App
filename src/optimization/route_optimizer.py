@@ -1,78 +1,304 @@
 """
 NES Van Route Optimization Engine
-Basic OR-Tools TSP implementation with dummy Euclidean distances
+Real OR-Tools TSP/VRP implementation with Google Maps API integration
 """
 
-import numpy as np
+import logging
+from typing import List, Optional, Tuple, Dict, Any
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
-from typing import List
+
 from src.models.route_models import StopModel
+from src.services.google_maps import GoogleMapsService
+
+logger = logging.getLogger(__name__)
 
 class RouteOptimizer:
-    """Main optimization engine using OR-Tools (TSP for MVP)"""
-    def __init__(self, depot_address, vehicle_capacity=15):
+    """Main optimization engine using OR-Tools with Google Maps API"""
+
+    def __init__(self, depot_address: str, vehicle_capacity: int = 15, api_key: Optional[str] = None):
+        """
+        Initialize the route optimizer
+
+        Args:
+            depot_address: Address of the depot/starting point
+            vehicle_capacity: Maximum capacity per vehicle
+            api_key: Google Maps API key (optional, will use env var if not provided)
+        """
         self.depot_address = depot_address
         self.vehicle_capacity = vehicle_capacity
+        self.gmaps_service = GoogleMapsService(api_key)
 
-    def optimize_route(self, stops: List[StopModel], start_time):
-        # For MVP, generate dummy coordinates for each stop
-        n = len(stops)
-        coords = self._generate_dummy_coords(n)
-        distance_matrix = self._euclidean_distance_matrix(coords)
+    def optimize_route(
+        self,
+        stops: List[StopModel],
+        start_time,
+        num_vehicles: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Optimize routes for multiple vehicles using real addresses and Google Maps
 
-        # OR-Tools TSP setup
-        manager = pywrapcp.RoutingIndexManager(n, 1, 0)
-        routing = pywrapcp.RoutingModel(manager)
+        Args:
+            stops: List of StopModel objects with address information
+            start_time: Route start time (for future time window implementation)
+            num_vehicles: Number of vehicles to use
 
-        def distance_callback(from_index, to_index):
-            from_node = manager.IndexToNode(from_index)
-            to_node = manager.IndexToNode(to_index)
-            return int(distance_matrix[from_node][to_node])
+        Returns:
+            Dictionary with optimization results
+        """
+        try:
+            if not stops:
+                return {
+                    'route_sequence': [],
+                    'total_distance': 0,
+                    'is_feasible': True,
+                    'vehicle_routes': [],
+                    'geocoding_errors': []
+                }
 
-        transit_callback_index = routing.RegisterTransitCallback(distance_callback)
-        routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+            # Step 1: Geocode all addresses
+            addresses = [stop.address for stop in stops]
+            depot_coords, stop_coords, geocoding_errors = self._geocode_all_addresses(addresses)
 
-        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.first_solution_strategy = (
-            routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
-        search_parameters.time_limit.seconds = 5
+            if not depot_coords:
+                raise ValueError("Could not geocode depot address")
 
-        solution = routing.SolveWithParameters(search_parameters)
-        if not solution:
+            # Filter out stops that couldn't be geocoded
+            valid_stops = []
+            valid_coords = []
+            for i, (stop, coord) in enumerate(zip(stops, stop_coords)):
+                if coord is not None:
+                    valid_stops.append(stop)
+                    valid_coords.append(coord)
+                else:
+                    geocoding_errors.append(f"Stop {i+1}: {stop.address}")
+
+            if not valid_stops:
+                raise ValueError("Could not geocode any stop addresses")
+
+            logger.info(f"Successfully geocoded {len(valid_stops)} out of {len(stops)} stops")
+
+            # Step 2: Get distance matrix from Google Maps
+            distance_matrix, duration_matrix = self.gmaps_service.get_route_optimization_matrix(
+                depot_coords, valid_coords
+            )
+
+            # Step 3: Run optimization
+            if num_vehicles == 1:
+                # Single vehicle - use TSP
+                result = self._optimize_single_vehicle(distance_matrix, duration_matrix, valid_stops)
+            else:
+                # Multiple vehicles - use VRP
+                result = self._optimize_multi_vehicle(distance_matrix, duration_matrix, valid_stops, num_vehicles)
+
+            # Add geocoding errors to result
+            result['geocoding_errors'] = geocoding_errors
+            return result
+
+        except Exception as e:
+            logger.error(f"Route optimization failed: {e}")
             return {
                 'route_sequence': [],
                 'total_distance': 0,
-                'is_feasible': False
+                'is_feasible': False,
+                'vehicle_routes': [],
+                'geocoding_errors': [str(e)]
             }
 
-        # Extract route
-        index = routing.Start(0)
-        route = []
-        total_distance = 0
-        while not routing.IsEnd(index):
-            route.append(manager.IndexToNode(index))
-            previous_index = index
-            index = solution.Value(routing.NextVar(index))
-            total_distance += routing.GetArcCostForVehicle(previous_index, index, 0)
-        route.append(manager.IndexToNode(index))  # End
+    def _geocode_all_addresses(self, stop_addresses: List[str]) -> Tuple[Optional[Tuple[float, float]], List[Optional[Tuple[float, float]]], List[str]]:
+        """
+        Geocode depot and all stop addresses
 
-        return {
-            'route_sequence': route,
-            'total_distance': total_distance,
-            'is_feasible': True
-        }
+        Returns:
+            Tuple of (depot_coords, stop_coords_list, error_messages)
+        """
+        geocoding_errors = []
 
-    def _generate_dummy_coords(self, n):
-        # For MVP, generate random 2D coordinates for each stop
-        np.random.seed(42)
-        return np.random.rand(n, 2) * 100
+        # Geocode depot
+        try:
+            depot_coords = self.gmaps_service.geocode_address(self.depot_address)
+        except ValueError as e:
+            logger.error(f"Failed to geocode depot: {e}")
+            depot_coords = None
+            geocoding_errors.append(f"Depot: {self.depot_address} - {e}")
 
-    def _euclidean_distance_matrix(self, coords):
-        n = coords.shape[0]
-        matrix = np.zeros((n, n))
-        for i in range(n):
-            for j in range(n):
-                if i != j:
-                    matrix[i][j] = np.linalg.norm(coords[i] - coords[j])
-        return matrix 
+        # Geocode stops
+        stop_coords = self.gmaps_service.geocode_addresses(stop_addresses)
+
+        return depot_coords, stop_coords, geocoding_errors
+
+    def _optimize_single_vehicle(
+        self,
+        distance_matrix: List[List[Optional[int]]],
+        duration_matrix: List[List[Optional[int]]],
+        stops: List[StopModel]
+    ) -> Dict[str, Any]:
+        """
+        Optimize route for single vehicle (TSP)
+        """
+        try:
+            n = len(stops) + 1  # +1 for depot
+            manager = pywrapcp.RoutingIndexManager(n, 1, 0)
+            routing = pywrapcp.RoutingModel(manager)
+
+            def distance_callback(from_index, to_index):
+                from_node = manager.IndexToNode(from_index)
+                to_node = manager.IndexToNode(to_index)
+
+                # Handle None values in distance matrix
+                distance = distance_matrix[from_node][to_node]
+                if distance is None:
+                    return 999999  # Large penalty for unreachable locations
+                return int(distance)
+
+            transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+            routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+
+            search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+            search_parameters.first_solution_strategy = (
+                routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+            search_parameters.time_limit.seconds = 10
+
+            solution = routing.SolveWithParameters(search_parameters)
+
+            if not solution:
+                return {
+                    'route_sequence': [],
+                    'total_distance': 0,
+                    'is_feasible': False,
+                    'vehicle_routes': []
+                }
+
+            # Extract route
+            index = routing.Start(0)
+            route = []
+            total_distance = 0
+
+            while not routing.IsEnd(index):
+                route.append(manager.IndexToNode(index))
+                previous_index = index
+                index = solution.Value(routing.NextVar(index))
+                total_distance += routing.GetArcCostForVehicle(previous_index, index, 0)
+
+            route.append(manager.IndexToNode(index))  # End at depot
+
+            return {
+                'route_sequence': route,
+                'total_distance': total_distance,
+                'is_feasible': True,
+                'vehicle_routes': [{
+                    'vehicle_id': 0,
+                    'stops': route[1:-1],  # Exclude depot from stops
+                    'distance': total_distance,
+                    'load': sum(len(stop.passengers) for stop in stops)
+                }]
+            }
+
+        except Exception as e:
+            logger.error(f"Single vehicle optimization failed: {e}")
+            return {
+                'route_sequence': [],
+                'total_distance': 0,
+                'is_feasible': False,
+                'vehicle_routes': []
+            }
+
+    def _optimize_multi_vehicle(
+        self,
+        distance_matrix: List[List[Optional[int]]],
+        duration_matrix: List[List[Optional[int]]],
+        stops: List[StopModel],
+        num_vehicles: int
+    ) -> Dict[str, Any]:
+        """
+        Optimize routes for multiple vehicles (VRP)
+        """
+        try:
+            n = len(stops) + 1  # +1 for depot
+            manager = pywrapcp.RoutingIndexManager(n, num_vehicles, 0)
+            routing = pywrapcp.RoutingModel(manager)
+
+            def distance_callback(from_index, to_index):
+                from_node = manager.IndexToNode(from_index)
+                to_node = manager.IndexToNode(to_index)
+
+                distance = distance_matrix[from_node][to_node]
+                if distance is None:
+                    return 999999
+                return int(distance)
+
+            transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+            routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+
+            # Add capacity constraints
+            def demand_callback(from_index):
+                from_node = manager.IndexToNode(from_index)
+                if from_node == 0:  # Depot
+                    return 0
+                return len(stops[from_node - 1].passengers)
+
+            demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
+            routing.AddDimensionWithVehicleCapacity(
+                demand_callback_index,
+                0,  # null capacity slack
+                [self.vehicle_capacity] * num_vehicles,  # vehicle maximum capacities
+                True,  # start cumul to zero
+                'Capacity'
+            )
+
+            search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+            search_parameters.first_solution_strategy = (
+                routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+            search_parameters.time_limit.seconds = 15
+
+            solution = routing.SolveWithParameters(search_parameters)
+
+            if not solution:
+                return {
+                    'route_sequence': [],
+                    'total_distance': 0,
+                    'is_feasible': False,
+                    'vehicle_routes': []
+                }
+
+            # Extract routes for each vehicle
+            vehicle_routes = []
+            total_distance = 0
+
+            for vehicle_id in range(num_vehicles):
+                index = routing.Start(vehicle_id)
+                route = []
+                route_distance = 0
+
+                while not routing.IsEnd(index):
+                    route.append(manager.IndexToNode(index))
+                    previous_index = index
+                    index = solution.Value(routing.NextVar(index))
+                    route_distance += routing.GetArcCostForVehicle(previous_index, index, vehicle_id)
+
+                route.append(manager.IndexToNode(index))  # End at depot
+
+                if len(route) > 2:  # More than just depot -> depot
+                    vehicle_routes.append({
+                        'vehicle_id': vehicle_id,
+                        'stops': route[1:-1],  # Exclude depot
+                        'distance': route_distance,
+                        'load': sum(len(stops[node-1].passengers) for node in route[1:-1])
+                    })
+                    total_distance += route_distance
+
+            return {
+                'route_sequence': [],  # Not used in multi-vehicle case
+                'total_distance': total_distance,
+                'is_feasible': True,
+                'vehicle_routes': vehicle_routes
+            }
+
+        except Exception as e:
+            logger.error(f"Multi-vehicle optimization failed: {e}")
+            return {
+                'route_sequence': [],
+                'total_distance': 0,
+                'is_feasible': False,
+                'vehicle_routes': []
+            }
