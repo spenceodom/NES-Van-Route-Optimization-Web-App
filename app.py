@@ -21,10 +21,17 @@ def is_wheelchair(val):
 
 def format_distance(meters):
     """Format distance in meters to human readable format"""
-    if meters >= 1000:
-        return ".1f"
-    else:
-        return f"{meters}m"
+    try:
+        if meters is None:
+            return "—"
+        meters_int = int(meters)
+        if meters_int >= 1000:
+            km = meters_int / 1000.0
+            return f"{km:.1f} km"
+        else:
+            return f"{meters_int} m"
+    except Exception:
+        return str(meters)
 
 def format_duration(seconds):
     """Format duration in seconds to human readable format"""
@@ -37,7 +44,7 @@ def format_duration(seconds):
         return f"{minutes}m"
 
 def main():
-    st.title(" NES Van Route Optimizer")
+    st.title("NES Van Route Optimizer")
     st.markdown("Optimize daily van routes to save time, fuel, and ensure on-time pickups")
 
     # API Key Configuration
@@ -220,7 +227,7 @@ def main():
                     st.info(f" Regular vans: {regular_count} passengers ({len(regular_stops)} stops, {min_vans_needed} vans needed)")
                 
                 if wheelchair_van_regular_passenger:
-                    st.info(f"? Note: 1 regular passenger ({wheelchair_van_regular_passenger}) will ride in the wheelchair van to maximize efficiency")
+                    st.info(f"Note: 1 regular passenger ({wheelchair_van_regular_passenger}) will ride in the wheelchair van to maximize efficiency")
 
                 # Optimize button
                 if st.button(" Optimize Routes", disabled=not api_key):
@@ -248,10 +255,12 @@ def main():
                                 else:
                                     # Display optimized routes
                                     total_distance = 0
+                                    total_duration = 0
                                     for route in regular_result['vehicle_routes']:
                                         if route['stops']:  # Only show routes with stops
                                             st.markdown(f"**Van {route['vehicle_id'] + 1}:**")
-                                            st.write(f" Distance: {format_distance(route['distance'])} |  Passengers: {route['load']}")
+                                            duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
+                                            st.write(f" Distance: {format_distance(route['distance'])} | Duration: {duration_text} | Passengers: {route['load']}")
 
                                             # Show stops in route order
                                             for stop_idx in route['stops']:
@@ -260,9 +269,14 @@ def main():
                                                     st.write(f"   {stop.address}: {len(stop.passengers)} passengers - {', '.join(stop.passengers)}")
 
                                             total_distance += route['distance']
+                                            if 'duration' in route:
+                                                total_duration += route['duration']
 
                                     if total_distance > 0:
-                                        st.info(f" Total regular van distance: {format_distance(total_distance)}")
+                                        if total_duration > 0:
+                                            st.info(f" Total regular distance: {format_distance(total_distance)} | Total duration: {format_duration(total_duration)}")
+                                        else:
+                                            st.info(f" Total regular van distance: {format_distance(total_distance)}")
 
                             # Handle wheelchair routes (separate optimization)
                             if wheelchair_stops:
@@ -278,7 +292,8 @@ def main():
 
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
                                     route = wheelchair_result['vehicle_routes'][0]
-                                    st.write(f" Distance: {format_distance(route['distance'])} |  Passengers: {route['load']}")
+                                    duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
+                                    st.write(f" Distance: {format_distance(route['distance'])} | Duration: {duration_text} | Passengers: {route['load']}")
                                     
                                     if wheelchair_van_regular_passenger:
                                         st.info(f"? This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")

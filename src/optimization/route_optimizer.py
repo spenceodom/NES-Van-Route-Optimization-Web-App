@@ -141,17 +141,18 @@ class RouteOptimizer:
             manager = pywrapcp.RoutingIndexManager(n, 1, 0)
             routing = pywrapcp.RoutingModel(manager)
 
-            def distance_callback(from_index, to_index):
+            # Use duration as the optimization cost while still tracking distance
+            def duration_cost_callback(from_index, to_index):
                 from_node = manager.IndexToNode(from_index)
                 to_node = manager.IndexToNode(to_index)
 
-                # Handle None values in distance matrix
-                distance = distance_matrix[from_node][to_node]
-                if distance is None:
+                # Handle None values in duration matrix
+                duration = duration_matrix[from_node][to_node]
+                if duration is None:
                     return 999999  # Large penalty for unreachable locations
-                return int(distance)
+                return int(duration)
 
-            transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+            transit_callback_index = routing.RegisterTransitCallback(duration_cost_callback)
             routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
@@ -172,24 +173,35 @@ class RouteOptimizer:
             # Extract route
             index = routing.Start(0)
             route = []
-            total_distance = 0
+            total_distance_m = 0
+            total_duration_s = 0
 
             while not routing.IsEnd(index):
-                route.append(manager.IndexToNode(index))
+                from_node_index = manager.IndexToNode(index)
+                route.append(from_node_index)
                 previous_index = index
                 index = solution.Value(routing.NextVar(index))
-                total_distance += routing.GetArcCostForVehicle(previous_index, index, 0)
+                to_node_index = manager.IndexToNode(index)
+                # Sum both distance and duration from matrices
+                edge_distance = distance_matrix[from_node_index][to_node_index]
+                edge_duration = duration_matrix[from_node_index][to_node_index]
+                if edge_distance is not None:
+                    total_distance_m += int(edge_distance)
+                if edge_duration is not None:
+                    total_duration_s += int(edge_duration)
 
             route.append(manager.IndexToNode(index))  # End at depot
 
             return {
                 'route_sequence': route,
-                'total_distance': total_distance,
+                'total_distance': total_distance_m,
+                'total_duration': total_duration_s,
                 'is_feasible': True,
                 'vehicle_routes': [{
                     'vehicle_id': 0,
                     'stops': route[1:-1],  # Exclude depot from stops
-                    'distance': total_distance,
+                    'distance': total_distance_m,
+                    'duration': total_duration_s,
                     'load': sum(len(stop.passengers) for stop in stops)
                 }]
             }
@@ -218,16 +230,17 @@ class RouteOptimizer:
             manager = pywrapcp.RoutingIndexManager(n, num_vehicles, 0)
             routing = pywrapcp.RoutingModel(manager)
 
-            def distance_callback(from_index, to_index):
+            # Use duration as the optimization cost while still tracking distance
+            def duration_cost_callback(from_index, to_index):
                 from_node = manager.IndexToNode(from_index)
                 to_node = manager.IndexToNode(to_index)
 
-                distance = distance_matrix[from_node][to_node]
-                if distance is None:
+                duration = duration_matrix[from_node][to_node]
+                if duration is None:
                     return 999999
-                return int(distance)
+                return int(duration)
 
-            transit_callback_index = routing.RegisterTransitCallback(distance_callback)
+            transit_callback_index = routing.RegisterTransitCallback(duration_cost_callback)
             routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
             # Add capacity constraints
@@ -263,18 +276,27 @@ class RouteOptimizer:
 
             # Extract routes for each vehicle
             vehicle_routes = []
-            total_distance = 0
+            total_distance_m = 0
+            total_duration_s = 0
 
             for vehicle_id in range(num_vehicles):
                 index = routing.Start(vehicle_id)
                 route = []
-                route_distance = 0
+                route_distance_m = 0
+                route_duration_s = 0
 
                 while not routing.IsEnd(index):
-                    route.append(manager.IndexToNode(index))
+                    from_node_index = manager.IndexToNode(index)
+                    route.append(from_node_index)
                     previous_index = index
                     index = solution.Value(routing.NextVar(index))
-                    route_distance += routing.GetArcCostForVehicle(previous_index, index, vehicle_id)
+                    to_node_index = manager.IndexToNode(index)
+                    edge_distance = distance_matrix[from_node_index][to_node_index]
+                    edge_duration = duration_matrix[from_node_index][to_node_index]
+                    if edge_distance is not None:
+                        route_distance_m += int(edge_distance)
+                    if edge_duration is not None:
+                        route_duration_s += int(edge_duration)
 
                 route.append(manager.IndexToNode(index))  # End at depot
 
@@ -282,14 +304,17 @@ class RouteOptimizer:
                     vehicle_routes.append({
                         'vehicle_id': vehicle_id,
                         'stops': route[1:-1],  # Exclude depot
-                        'distance': route_distance,
+                        'distance': route_distance_m,
+                        'duration': route_duration_s,
                         'load': sum(len(stops[node-1].passengers) for node in route[1:-1])
                     })
-                    total_distance += route_distance
+                    total_distance_m += route_distance_m
+                    total_duration_s += route_duration_s
 
             return {
                 'route_sequence': [],  # Not used in multi-vehicle case
-                'total_distance': total_distance,
+                'total_distance': total_distance_m,
+                'total_duration': total_duration_s,
                 'is_feasible': True,
                 'vehicle_routes': vehicle_routes
             }

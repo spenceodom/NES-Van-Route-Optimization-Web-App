@@ -124,46 +124,76 @@ class GoogleMapsService:
             Values are in meters and seconds respectively, None if route not found
         """
         try:
-            self._rate_limit()
+            # Google Distance Matrix limits: origins * destinations <= 100 per request (standard)
+            # We chunk the full matrix into sub-matrices that respect the limit and stitch results.
 
-            # Convert coordinates to Google Maps format
-            origin_strs = [f"{lat},{lng}" for lat, lng in origins]
-            dest_strs = [f"{lat},{lng}" for lat, lng in destinations]
+            num_origins = len(origins)
+            num_destinations = len(destinations)
 
-            # Build request parameters
-            params = {
-                "origins": origin_strs,
-                "destinations": dest_strs,
-                "mode": "driving",
-                "units": "metric"
-            }
+            # Initialize full matrices with None
+            distance_matrix: List[List[Optional[int]]] = [
+                [None for _ in range(num_destinations)] for _ in range(num_origins)
+            ]
+            duration_matrix: List[List[Optional[int]]] = [
+                [None for _ in range(num_destinations)] for _ in range(num_origins)
+            ]
 
-            if departure_time:
-                params["departure_time"] = departure_time
+            # Choose chunk sizes such that rows_chunk * cols_chunk <= 100
+            # Aim for square-ish chunks for efficiency
+            max_elements = 100
+            # Start with up to 10x10, grow rows chunk up to 25 while keeping product <= 100
+            rows_chunk = min(num_origins, 25)
+            cols_chunk = max_elements // max(1, rows_chunk)
+            cols_chunk = max(1, min(num_destinations, cols_chunk))
 
-            result = self.client.distance_matrix(**params)
+            # If cols_chunk ends up too small, rebalance
+            if rows_chunk * cols_chunk > max_elements:
+                cols_chunk = max_elements // rows_chunk
+                cols_chunk = max(1, cols_chunk)
 
-            if result["status"] != "OK":
-                raise ValueError(f"Distance matrix API returned status: {result['status']}")
+            for row_start in range(0, num_origins, rows_chunk):
+                row_end = min(num_origins, row_start + rows_chunk)
+                origin_block = origins[row_start:row_end]
+                origin_strs = [f"{lat},{lng}" for lat, lng in origin_block]
 
-            # Extract distance and duration matrices
-            distance_matrix = []
-            duration_matrix = []
+                for col_start in range(0, num_destinations, cols_chunk):
+                    col_end = min(num_destinations, col_start + cols_chunk)
+                    dest_block = destinations[col_start:col_end]
+                    dest_strs = [f"{lat},{lng}" for lat, lng in dest_block]
 
-            for row in result["rows"]:
-                dist_row = []
-                dur_row = []
+                    # Enforce per-request rate limit
+                    self._rate_limit()
 
-                for element in row["elements"]:
-                    if element["status"] == "OK":
-                        dist_row.append(element["distance"]["value"])  # meters
-                        dur_row.append(element["duration"]["value"])   # seconds
-                    else:
-                        dist_row.append(None)
-                        dur_row.append(None)
+                    params: Dict[str, Any] = {
+                        "origins": origin_strs,
+                        "destinations": dest_strs,
+                        "mode": "driving",
+                        "units": "metric",
+                    }
+                    if departure_time:
+                        params["departure_time"] = departure_time
 
-                distance_matrix.append(dist_row)
-                duration_matrix.append(dur_row)
+                    result = self.client.distance_matrix(**params)
+
+                    if result.get("status") != "OK":
+                        raise ValueError(f"Distance matrix API returned status: {result.get('status')}")
+
+                    # Extract and place into full matrices
+                    for i_row, row in enumerate(result.get("rows", [])):
+                        dist_row: List[Optional[int]] = []
+                        dur_row: List[Optional[int]] = []
+                        for element in row.get("elements", []):
+                            if element.get("status") == "OK":
+                                dist_row.append(element["distance"]["value"])  # meters
+                                dur_row.append(element["duration"]["value"])   # seconds
+                            else:
+                                dist_row.append(None)
+                                dur_row.append(None)
+
+                        # Place into the correct slice
+                        for j_col, (d_val, t_val) in enumerate(zip(dist_row, dur_row)):
+                            distance_matrix[row_start + i_row][col_start + j_col] = d_val
+                            duration_matrix[row_start + i_row][col_start + j_col] = t_val
 
             return distance_matrix, duration_matrix
 
