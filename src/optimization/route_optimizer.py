@@ -49,8 +49,28 @@ class RouteOptimizer:
         try:
             from src.services.google_maps import GoogleMapsService as _GoogleMapsService
         except SyntaxError as se:
-            # Wrap syntax error to provide clearer guidance
-            raise ValueError("Failed to load Google Maps service due to a corrupted source file on the server. Please redeploy/refresh the app so that src/services/google_maps.py is a clean UTF-8 text file.") from se
+            # Attempt runtime sanitation fallback: strip null bytes and import from a temp file
+            try:
+                import tempfile
+                import importlib.util as _ilu
+                # gm_path computed above in defensive check
+                gm_path_local = locals().get('gm_path', None)
+                if not gm_path_local:
+                    raise RuntimeError('google_maps.py path not found for sanitation')
+                with open(gm_path_local, 'rb') as f:
+                    data = f.read()
+                cleaned = data.replace(b'\x00', b'')
+                tmp_path = os.path.join(tempfile.gettempdir(), 'google_maps_clean.py')
+                with open(tmp_path, 'wb') as f:
+                    f.write(cleaned)
+                spec2 = _ilu.spec_from_file_location('google_maps_clean', tmp_path)
+                gm_mod = _ilu.module_from_spec(spec2)
+                assert spec2 and spec2.loader
+                spec2.loader.exec_module(gm_mod)
+                _GoogleMapsService = getattr(gm_mod, 'GoogleMapsService')
+            except Exception as sanitize_error:
+                # Wrap syntax error to provide clearer guidance
+                raise ValueError("Failed to load Google Maps service due to a corrupted source file on the server. Please redeploy/refresh the app so that src/services/google_maps.py is a clean UTF-8 text file.") from se
 
         self.gmaps_service = _GoogleMapsService(api_key)
 
