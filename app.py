@@ -101,14 +101,8 @@ def main():
             value=2,
             help="How many regular vans are available for this route? (Excludes wheelchair van)"
         )
-        # Route Start Time (AM/PM dropdowns)
-        st.markdown("**Route Start Time**")
-        hour = st.selectbox("Hour", list(range(1, 13)), index=7)
-        minute = st.selectbox("Minute", ["00", "15", "30", "45"], index=0)
-        am_pm = st.selectbox("AM/PM", ["AM", "PM"], index=0)
-        hour_24 = hour % 12 if am_pm == "AM" else (hour % 12) + 12
-        start_time = time(hour_24, int(minute))
-        st.caption(f"Selected start time: {hour}:{minute} {am_pm}")
+        # Fixed route start time (time selection removed)
+        start_time = time(8, 0)
         st.divider()
 
         # Optional debug toggle (admin only)
