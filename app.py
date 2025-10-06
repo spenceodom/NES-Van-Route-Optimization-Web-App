@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import math
 import pandas as pd
 from datetime import time
 from src.models.route_models import StopModel
@@ -263,7 +264,7 @@ def main():
                 if wheelchair_count > 0:
                     st.info(f" Wheelchair van: {wheelchair_count} passengers ({len(wheelchair_stops)} stops)")
                 if regular_count > 0:
-                    st.info(f" Regular vans: {regular_count} passengers ({len(regular_stops)} stops, {min_vans_needed} vans needed)")
+                st.info(f" Regular vans: {regular_count} passengers ({len(regular_stops)} stops, using {number_of_vans} vans)")
                 
                 if wheelchair_van_regular_passenger:
                     st.info(f"Note: 1 regular passenger ({wheelchair_van_regular_passenger}) will ride in the wheelchair van to maximize efficiency")
@@ -277,7 +278,16 @@ def main():
                     with st.spinner(" Optimizing routes with real-time traffic data..."):
                         try:
                             # Initialize optimizer with API key
-                            optimizer_regular = RouteOptimizer(depot_address, MAX_VAN_CAPACITY, api_key)
+                            # Force utilization of all available regular vans by tightening per-vehicle capacity
+                            if regular_stops:
+                                total_regular_passengers = sum(len(s.passengers) for s in regular_stops)
+                                max_stop_load = max((len(s.passengers) for s in regular_stops), default=0)
+                                forced_capacity = max(1, max_stop_load, math.ceil(total_regular_passengers / max(1, number_of_vans)))
+                                forced_capacity = min(MAX_VAN_CAPACITY, forced_capacity)
+                            else:
+                                forced_capacity = MAX_VAN_CAPACITY
+
+                            optimizer_regular = RouteOptimizer(depot_address, forced_capacity, api_key)
 
                             # Optimize regular routes
                             if regular_stops:
