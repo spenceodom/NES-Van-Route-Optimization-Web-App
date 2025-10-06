@@ -57,6 +57,7 @@ def main():
     if not required_password:
         required_password = os.getenv("APP_PASSWORD")
 
+    is_admin = False
     if required_password:
         with st.sidebar:
             st.markdown("**Admin Access**")
@@ -68,8 +69,11 @@ def main():
                         st.success("Access granted")
                     else:
                         st.error("Incorrect password")
-            if not st.session_state.get("authed", False):
+            is_admin = bool(st.session_state.get("authed", False))
+            if not is_admin:
                 st.stop()
+    else:
+        is_admin = True  # no password configured, treat as admin for debug toggle
 
     # API Key Configuration
     with st.sidebar:
@@ -106,6 +110,11 @@ def main():
         start_time = time(hour_24, int(minute))
         st.caption(f"Selected start time: {hour}:{minute} {am_pm}")
         st.divider()
+
+        # Optional debug toggle (admin only)
+        debug = False
+        if is_admin:
+            debug = st.checkbox("Debug mode (show tracebacks)", value=False)
 
         # API Key with server-managed fallback (hide UI when managed key exists)
         managed_api_key = None
@@ -347,9 +356,15 @@ def main():
 
                         except ValueError as ve:
                             st.error(f" Configuration Error: {str(ve)}")
+                            if debug:
+                                import traceback
+                                st.text(traceback.format_exc())
                         except Exception as e:
                             st.error(f" Optimization failed: {str(e)}")
                             st.info(" Make sure your Google Maps API key is valid and has the required permissions")
+                            if debug:
+                                import traceback
+                                st.text(traceback.format_exc())
         except Exception as e:
             st.error(f" Failed to read or process master list: {str(e)}")
 
