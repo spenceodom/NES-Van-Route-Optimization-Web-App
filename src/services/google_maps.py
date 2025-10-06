@@ -22,8 +22,13 @@ class GoogleMapsService:
             api_key: Google Maps API key. If None, will try to get from environment
         """
         self.api_key = api_key or os.getenv("GOOGLE_MAPS_API_KEY")
+        if self.api_key:
+            self.api_key = self.api_key.strip()
         if not self.api_key:
-            raise ValueError("Google Maps API key not provided. Set GOOGLE_MAPS_API_KEY environment variable")
+            raise ValueError("Google Maps API key not provided. Set GOOGLE_MAPS_API_KEY in secrets or environment")
+        # Guard against hidden invalid characters that can break libraries
+        if any((c == "\x00" or ord(c) < 32) for c in self.api_key):
+            raise ValueError("Google Maps API key contains invalid characters. Please paste a clean plain-text key.")
 
         # Lazy import to avoid app startup failures when dependency is missing
         try:

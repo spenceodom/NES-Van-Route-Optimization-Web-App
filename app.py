@@ -107,8 +107,7 @@ def main():
         st.caption(f"Selected start time: {hour}:{minute} {am_pm}")
         st.divider()
 
-        # API Key input with server-managed fallback
-        st.markdown("**Google Maps API Configuration**")
+        # API Key with server-managed fallback (hide UI when managed key exists)
         managed_api_key = None
         try:
             managed_api_key = st.secrets.get("GOOGLE_MAPS_API_KEY")  # type: ignore[attr-defined]
@@ -118,14 +117,15 @@ def main():
             managed_api_key = os.getenv("GOOGLE_MAPS_API_KEY")
 
         if managed_api_key:
-            api_key = managed_api_key
-            st.success(" Server API key configured")
+            api_key = managed_api_key.strip()
         else:
+            st.markdown("**Google Maps API Configuration**")
             api_key = st.text_input(
                 "Google Maps API Key",
                 type="password",
                 help="Enter your Google Maps API key for geocoding and distance calculations"
             )
+            api_key = api_key.strip() if api_key else api_key
             if not api_key:
                 st.warning(" Google Maps API key is required for route optimization")
             else:
