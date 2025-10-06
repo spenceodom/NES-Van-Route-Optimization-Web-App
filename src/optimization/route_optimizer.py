@@ -15,6 +15,134 @@ logger = logging.getLogger(__name__)
 class RouteOptimizer:
     """Main optimization engine using OR-Tools with Google Maps API"""
 
+    class GoogleMapsService:
+        """
+        Google Maps Service for geocoding and distance matrix calculation.
+        This class is embedded directly into RouteOptimizer to avoid external dependency issues.
+        """
+        def __init__(self, api_key: Optional[str] = None):
+            """
+            Initialize the Google Maps service.
+
+            Args:
+                api_key: Google Maps API key (optional, will use env var if not provided)
+            """
+            self.api_key = api_key
+            if not self.api_key:
+                self.api_key = os.getenv("GOOGLE_MAPS_API_KEY")
+                if not self.api_key:
+                    raise ValueError("Google Maps API key not provided. Please set GOOGLE_MAPS_API_KEY environment variable.")
+
+            self.base_url = "https://maps.googleapis.com/maps/api/geocode/json"
+            self.distance_matrix_url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+
+        def geocode_address(self, address: str) -> Tuple[float, float]:
+            """
+            Geocode a single address.
+
+            Args:
+                address: The address to geocode.
+
+            Returns:
+                Tuple of (latitude, longitude).
+
+            Raises:
+                ValueError: If geocoding fails or returns no results.
+            """
+            params = {
+                "address": address,
+                "key": self.api_key
+            }
+            response = requests.get(self.base_url, params=params)
+            response.raise_for_status()
+            results = response.json().get("results")
+            if not results:
+                raise ValueError(f"No results found for address: {address}")
+
+            location = results[0].get("geometry", {}).get("location")
+            if not location:
+                raise ValueError(f"Location not found in results for address: {address}")
+
+            lat = location["lat"]
+            lng = location["lng"]
+            return (lat, lng)
+
+        def geocode_addresses(self, addresses: List[str]) -> List[Optional[Tuple[float, float]]]:
+            """
+            Geocode multiple addresses.
+
+            Args:
+                addresses: List of addresses to geocode.
+
+            Returns:
+                List of tuples (latitude, longitude) or None if geocoding fails.
+            """
+            geocoded_coords = []
+            for address in addresses:
+                try:
+                    coords = self.geocode_address(address)
+                    geocoded_coords.append(coords)
+                except ValueError as e:
+                    logger.warning(f"Could not geocode address '{address}': {e}")
+                    geocoded_coords.append(None)
+            return geocoded_coords
+
+        def get_route_optimization_matrix(
+            self,
+            depot_coords: Tuple[float, float],
+            stop_coords: List[Tuple[float, float]]
+        ) -> Tuple[List[List[Optional[int]]], List[List[Optional[int]]]]:
+            """
+            Get distance and duration matrices from Google Maps Distance Matrix API.
+
+            Args:
+                depot_coords: Coordinates of the depot (latitude, longitude).
+                stop_coords: List of coordinates for stops (latitude, longitude).
+
+            Returns:
+                Tuple of (distance_matrix, duration_matrix).
+            """
+            origins = [f"{depot_coords[0]},{depot_coords[1]}"]
+            destinations = [f"{coord[0]},{coord[1]}" for coord in stop_coords]
+
+            params = {
+                "origins": "|".join(origins),
+                "destinations": "|".join(destinations),
+                "departure_time": "now", # Or a specific timestamp
+                "traffic_model": "pessimistic", # Or "optimistic", "best_guess"
+                "units": "metric", # Or "imperial"
+                "key": self.api_key
+            }
+
+            distance_response = requests.get(self.distance_matrix_url, params=params)
+            distance_response.raise_for_status()
+            distance_data = distance_response.json()
+
+            # Extract distance and duration matrices
+            distance_matrix = []
+            duration_matrix = []
+
+            if distance_data.get("status") == "OK":
+                rows = distance_data.get("rows", [])
+                for row in rows:
+                    distance_row = []
+                    duration_row = []
+                    elements = row.get("elements", [])
+                    for element in elements:
+                        distance = element.get("distance", {}).get("value")
+                        duration = element.get("duration", {}).get("value")
+                        distance_row.append(distance)
+                        duration_row.append(duration)
+                    distance_matrix.append(distance_row)
+                    duration_matrix.append(duration_row)
+            else:
+                logger.error(f"Distance Matrix API error: {distance_data.get('error_message')}")
+                # Return empty matrices or raise an error
+                distance_matrix = [[None] * len(stop_coords) for _ in range(len(origins))]
+                duration_matrix = [[None] * len(stop_coords) for _ in range(len(origins))]
+
+            return distance_matrix, duration_matrix
+
     def __init__(self, depot_address: str, vehicle_capacity: int = 15, api_key: Optional[str] = None):
         """
         Initialize the route optimizer
@@ -76,7 +204,7 @@ class RouteOptimizer:
                 # Wrap syntax error to provide clearer guidance
                 raise ValueError("Failed to load Google Maps service due to a corrupted source file on the server. Please redeploy/refresh the app so that src/services/google_maps.py is a clean UTF-8 text file.") from se
 
-        self.gmaps_service = _GoogleMapsService(api_key)
+        self.gmaps_service = self.GoogleMapsService(api_key)
 
     def optimize_route(
         self,
