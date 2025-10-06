@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 import pandas as pd
 from datetime import time
 from src.models.route_models import StopModel
@@ -47,6 +48,29 @@ def main():
     st.title("NES Van Route Optimizer")
     st.markdown("Optimize daily van routes to save time, fuel, and ensure on-time pickups")
 
+    # Optional admin gate controlled by APP_PASSWORD in secrets/env
+    required_password = None
+    try:
+        required_password = st.secrets.get("APP_PASSWORD")  # type: ignore[attr-defined]
+    except Exception:
+        required_password = None
+    if not required_password:
+        required_password = os.getenv("APP_PASSWORD")
+
+    if required_password:
+        with st.sidebar:
+            st.markdown("**Admin Access**")
+            if not st.session_state.get("authed", False):
+                pwd = st.text_input("Admin password", type="password", key="admin_pw")
+                if pwd:
+                    if pwd == required_password:
+                        st.session_state["authed"] = True
+                        st.success("Access granted")
+                    else:
+                        st.error("Incorrect password")
+            if not st.session_state.get("authed", False):
+                st.stop()
+
     # API Key Configuration
     with st.sidebar:
         # Depot address selection (radio buttons)
@@ -83,17 +107,29 @@ def main():
         st.caption(f"Selected start time: {hour}:{minute} {am_pm}")
         st.divider()
 
-        # API Key input
+        # API Key input with server-managed fallback
         st.markdown("**Google Maps API Configuration**")
-        api_key = st.text_input(
-            "Google Maps API Key",
-            type="password",
-            help="Enter your Google Maps API key for geocoding and distance calculations"
-        )
-        if not api_key:
-            st.warning(" Google Maps API key is required for route optimization")
+        managed_api_key = None
+        try:
+            managed_api_key = st.secrets.get("GOOGLE_MAPS_API_KEY")  # type: ignore[attr-defined]
+        except Exception:
+            managed_api_key = None
+        if not managed_api_key:
+            managed_api_key = os.getenv("GOOGLE_MAPS_API_KEY")
+
+        if managed_api_key:
+            api_key = managed_api_key
+            st.success(" Server API key configured")
         else:
-            st.success(" API key configured")
+            api_key = st.text_input(
+                "Google Maps API Key",
+                type="password",
+                help="Enter your Google Maps API key for geocoding and distance calculations"
+            )
+            if not api_key:
+                st.warning(" Google Maps API key is required for route optimization")
+            else:
+                st.success(" API key configured")
 
     st.header("Step 1: Upload Master List")
     master_file = st.file_uploader(
