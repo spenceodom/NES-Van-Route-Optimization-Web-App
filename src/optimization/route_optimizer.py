@@ -90,12 +90,12 @@ class RouteOptimizer:
                     geocoded_coords.append(None)
             return geocoded_coords
 
-    def get_route_optimization_matrix(
-            self,
-            depot_coords: Tuple[float, float],
-            stop_coords: List[Tuple[float, float]],
-            departure_time: Optional[str] = None
-        ) -> Tuple[List[List[Optional[int]]], List[List[Optional[int]]]]:
+        def get_route_optimization_matrix(
+                self,
+                depot_coords: Tuple[float, float],
+                stop_coords: List[Tuple[float, float]],
+                departure_time: Optional[str] = None
+            ) -> Tuple[List[List[Optional[int]]], List[List[Optional[int]]]]:
             """
             Get distance and duration matrices from Google Maps Distance Matrix API.
 
@@ -111,11 +111,11 @@ class RouteOptimizer:
             return self.get_distance_matrix(all_coords, all_coords, departure_time=departure_time)
 
         def get_distance_matrix(
-            self,
-            origins: List[Tuple[float, float]],
-            destinations: List[Tuple[float, float]],
-            departure_time: Optional[str] = None
-        ) -> Tuple[List[List[Optional[int]]], List[List[Optional[int]]]]:
+                self,
+                origins: List[Tuple[float, float]],
+                destinations: List[Tuple[float, float]],
+                departure_time: Optional[str] = None
+            ) -> Tuple[List[List[Optional[int]]], List[List[Optional[int]]]]:
             try:
                 num_origins = len(origins)
                 num_destinations = len(destinations)
