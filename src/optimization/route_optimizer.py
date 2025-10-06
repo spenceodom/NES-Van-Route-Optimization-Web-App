@@ -147,7 +147,7 @@ class RouteOptimizer:
                             "origins": "|".join(origin_strs),
                             "destinations": "|".join(dest_strs),
                             "mode": "driving",
-                            "units": "metric",
+                            "units": "imperial",
                             "key": self.api_key,
                         }
                         if departure_time:

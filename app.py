@@ -309,25 +309,24 @@ def main():
                                         if route['stops']:  # Only show routes with stops
                                             st.markdown(f"**Van {route['vehicle_id'] + 1}:**")
                                             duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
-                                            st.write(f" Distance: {format_distance(route['distance'])} | Duration: {duration_text} | Passengers: {route['load']}")
+                                            st.write(f" Estimated time: {duration_text}")
 
-                                            # Show passengers in route order as Name | Address
-                                            st.write("Name | Address")
-                                            for stop_idx in route['stops']:
+                                            # Show passengers grouped by stop: Stop N | Address, then names
+                                            for order_idx, stop_idx in enumerate(route['stops'], start=1):
                                                 if 0 <= stop_idx - 1 < len(regular_stops):  # Convert back to 0-based index
                                                     stop = regular_stops[stop_idx - 1]  # -1 because depot is index 0
+                                                    st.write(f"Stop {order_idx} | {stop.address}")
                                                     for passenger_name in stop.passengers:
-                                                        st.write(f"{passenger_name} | {stop.address}")
+                                                        st.write(f"{passenger_name}")
+                                                    st.write("")  # space between stops
 
                                             total_distance += route['distance']
                                             if 'duration' in route:
                                                 total_duration += route['duration']
 
-                                    if total_distance > 0:
-                                        if total_duration > 0:
-                                            st.info(f" Total regular distance: {format_distance(total_distance)} | Total duration: {format_duration(total_duration)}")
-                                        else:
-                                            st.info(f" Total regular van distance: {format_distance(total_distance)}")
+                                    st.write("")  # space between vans
+
+                                    # No overall totals per requirements
 
                             # Handle wheelchair routes (separate optimization)
                             if wheelchair_stops:
@@ -344,18 +343,21 @@ def main():
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
                                     route = wheelchair_result['vehicle_routes'][0]
                                     duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
-                                    st.write(f" Distance: {format_distance(route['distance'])} | Duration: {duration_text} | Passengers: {route['load']}")
+                                    st.write(f" Estimated time: {duration_text}")
                                     
                                     if wheelchair_van_regular_passenger:
                                         st.info(f"This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")
 
-                                    # Show passengers in route order as Name | Address
-                                    st.write("Name | Address")
-                                    for stop_idx in route['stops']:
+                                    # Show passengers grouped by stop: Stop N | Address, then names
+                                    for order_idx, stop_idx in enumerate(route['stops'], start=1):
                                         if 0 <= stop_idx - 1 < len(wheelchair_stops):
                                             stop = wheelchair_stops[stop_idx - 1]
+                                            st.write(f"Stop {order_idx} | {stop.address}")
                                             for passenger_name in stop.passengers:
-                                                st.write(f"{passenger_name} | {stop.address}")
+                                                st.write(f"{passenger_name}")
+                                            st.write("")  # space between stops
+
+                                    st.write("")  # space after wheelchair van
                                 else:
                                     st.write("No wheelchair passengers selected.")
                             else:
