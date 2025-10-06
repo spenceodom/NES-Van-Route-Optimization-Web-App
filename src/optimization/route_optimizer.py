@@ -9,7 +9,6 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 
 from src.models.route_models import StopModel
-from src.services.google_maps import GoogleMapsService
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,9 @@ class RouteOptimizer:
         """
         self.depot_address = depot_address
         self.vehicle_capacity = vehicle_capacity
-        self.gmaps_service = GoogleMapsService(api_key)
+        # Lazy import to avoid startup failures if maps service has environment issues
+        from src.services.google_maps import GoogleMapsService as _GoogleMapsService
+        self.gmaps_service = _GoogleMapsService(api_key)
 
     def optimize_route(
         self,

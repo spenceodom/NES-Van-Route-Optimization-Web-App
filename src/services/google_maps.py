@@ -9,12 +9,6 @@ from typing import List, Tuple, Optional, Dict, Any
 from functools import lru_cache
 import time
 
-try:
-    import googlemaps
-    from googlemaps.exceptions import ApiError, TransportError, Timeout
-except ImportError:
-    raise ImportError("googlemaps package not found. Install with: pip install googlemaps")
-
 logger = logging.getLogger(__name__)
 
 class GoogleMapsService:
@@ -31,6 +25,14 @@ class GoogleMapsService:
         if not self.api_key:
             raise ValueError("Google Maps API key not provided. Set GOOGLE_MAPS_API_KEY environment variable")
 
+        # Lazy import to avoid app startup failures when dependency is missing
+        try:
+            import googlemaps  # type: ignore
+            from googlemaps.exceptions import ApiError, TransportError, Timeout  # type: ignore
+        except ImportError as e:
+            raise ImportError("googlemaps package not found. Install with: pip install googlemaps") from e
+
+        self._api_exceptions = (ApiError, TransportError, Timeout)
         self.client = googlemaps.Client(key=self.api_key)
 
         # Rate limiting: Google Maps allows 40 requests per second
@@ -70,7 +72,7 @@ class GoogleMapsService:
             location = result[0]["geometry"]["location"]
             return (location["lat"], location["lng"])
 
-        except (ApiError, TransportError, Timeout) as e:
+        except self._api_exceptions as e:  # type: ignore[attr-defined]
             logger.error(f"Google Maps API error geocoding '{address}': {e}")
             raise ValueError(f"Failed to geocode address '{address}': {e}")
         except Exception as e:
