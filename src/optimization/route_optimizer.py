@@ -47,7 +47,11 @@ class RouteOptimizer:
 
         # Lazy import to avoid startup failures if maps service has environment issues
         try:
-            from src.services.google_maps import GoogleMapsService as _GoogleMapsService
+            # Prefer the clean client copy first
+            try:
+                from src.services.maps_client import GoogleMapsService as _GoogleMapsService  # type: ignore
+            except Exception:
+                from src.services.google_maps import GoogleMapsService as _GoogleMapsService
         except SyntaxError as se:
             # Attempt runtime sanitation fallback: strip null bytes and import from a temp file
             try:
