@@ -278,7 +278,7 @@ def main():
                         st.error(" Please configure Google Maps API key first")
                         return
 
-                    with st.spinner(" Optimizing routes with real-time traffic data..."):
+                    with st.spinner(" Optimizing routes..."):
                         try:
                             # Initialize optimizer with API key
                             optimizer_regular = RouteOptimizer(depot_address, MAX_VAN_CAPACITY, api_key)
