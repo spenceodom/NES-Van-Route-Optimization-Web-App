@@ -26,8 +26,32 @@ class RouteOptimizer:
         """
         self.depot_address = depot_address
         self.vehicle_capacity = vehicle_capacity
+
+        # Defensive check: ensure google_maps.py source has no null bytes on deployed envs
+        try:
+            import importlib.util
+            import os
+            spec = importlib.util.find_spec('src.services.google_maps')
+            gm_path = spec.origin if spec and spec.origin else os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'services', 'google_maps.py'))
+            try:
+                with open(gm_path, 'rb') as f:
+                    data = f.read()
+                if b'\x00' in data:
+                    raise ValueError("Detected invalid null bytes in src/services/google_maps.py on the server. Redeploy a clean copy from GitHub or restart the app to clear corrupted files.")
+            except FileNotFoundError:
+                # If the file isn't where expected, proceed to import and let Python raise a clear error
+                pass
+        except Exception:
+            # Non-fatal: continue; import will still be attempted below
+            pass
+
         # Lazy import to avoid startup failures if maps service has environment issues
-        from src.services.google_maps import GoogleMapsService as _GoogleMapsService
+        try:
+            from src.services.google_maps import GoogleMapsService as _GoogleMapsService
+        except SyntaxError as se:
+            # Wrap syntax error to provide clearer guidance
+            raise ValueError("Failed to load Google Maps service due to a corrupted source file on the server. Please redeploy/refresh the app so that src/services/google_maps.py is a clean UTF-8 text file.") from se
+
         self.gmaps_service = _GoogleMapsService(api_key)
 
     def optimize_route(
