@@ -178,8 +178,7 @@ def main():
 
             for idx, name in enumerate(all_names):
                 col = cols[idx % 3]
-                checked = st.session_state.get(f"name_{idx}", False)
-                if col.checkbox(name, key=f"name_{idx}", value=checked):
+                if col.checkbox(name, key=f"name_{idx}"):
                     selected_names.append(name)
                     total_selected += 1
 
@@ -294,19 +293,21 @@ def main():
                             # Optimize regular routes
                             if regular_stops:
                                 st.subheader("Regular Van Routes")
-                                # Build departure_time_iso if traffic-aware
-                                departure_time_iso = None
+                                # Build departure_time parameter for Distance Matrix (epoch seconds)
+                                departure_time_param = None
                                 if use_traffic:
-                                    import datetime
+                                    import datetime, time as _time
                                     today = datetime.date.today()
                                     dt = datetime.datetime(year=today.year, month=today.month, day=today.day,
                                                            hour=start_time.hour, minute=start_time.minute)
-                                    # ISO 8601 is acceptable, Google supports 'now' or timestamp; we pass ISO for clarity
-                                    departure_time_iso = dt.isoformat()
+                                    try:
+                                        departure_time_param = int(dt.timestamp())
+                                    except Exception:
+                                        departure_time_param = int(_time.time())
 
                                 regular_result = optimizer_regular.optimize_route(
                                     regular_stops, start_time, number_of_vans,
-                                    departure_time_iso=departure_time_iso,
+                                    departure_time_iso=str(departure_time_param) if departure_time_param is not None else None,
                                     search_seconds=effort_seconds
                                 )
 
@@ -351,7 +352,7 @@ def main():
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
                                 wheelchair_result = optimizer_wheelchair.optimize_route(
                                     wheelchair_stops, start_time, 1,
-                                    departure_time_iso=departure_time_iso,
+                                    departure_time_iso=str(departure_time_param) if departure_time_param is not None else None,
                                     search_seconds=effort_seconds
                                 )
 
