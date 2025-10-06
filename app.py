@@ -372,7 +372,7 @@ def main():
                                     # Render grouped stops
                                     stop_counter_wc = 1
                                     for addr, names in address_to_names_wc.items():
-        								st.write(f"Stop {stop_counter_wc} | {addr}")
+                                        st.write(f"Stop {stop_counter_wc} | {addr}")
                                         for passenger_name in names:
                                             st.write(f"{passenger_name}")
                                         st.write("")  # space between stops
