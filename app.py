@@ -101,14 +101,7 @@ def main():
             value=2,
             help="How many regular vans are available for this route? (Excludes wheelchair van)"
         )
-        # Route Start Time (AM/PM dropdowns)
-        st.markdown("**Route Start Time**")
-        hour = st.selectbox("Hour", list(range(1, 13)), index=7)
-        minute = st.selectbox("Minute", ["00", "15", "30", "45"], index=0)
-        am_pm = st.selectbox("AM/PM", ["AM", "PM"], index=0)
-        hour_24 = hour % 12 if am_pm == "AM" else (hour % 12) + 12
-        start_time = time(hour_24, int(minute))
-        st.caption(f"Selected start time: {hour}:{minute} {am_pm}")
+        # Removed Route Start Time (optimize on typical durations)
         st.divider()
 
         # Optional debug toggle (admin only)
@@ -297,7 +290,7 @@ def main():
                                 departure_time_param = None
 
                                 regular_result = optimizer_regular.optimize_route(
-                                    regular_stops, start_time, number_of_vans,
+                                    regular_stops, None, number_of_vans,
                                     departure_time_iso=None,
                                     search_seconds=effort_seconds
                                 )
@@ -342,7 +335,7 @@ def main():
                                 wc_capacity = sum(len(s.passengers) for s in wheelchair_stops)
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
                                 wheelchair_result = optimizer_wheelchair.optimize_route(
-                                    wheelchair_stops, start_time, 1,
+                                    wheelchair_stops, None, 1,
                                     departure_time_iso=None,
                                     search_seconds=effort_seconds
                                 )
