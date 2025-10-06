@@ -300,10 +300,15 @@ def main():
                                     today = datetime.date.today()
                                     dt = datetime.datetime(year=today.year, month=today.month, day=today.day,
                                                            hour=start_time.hour, minute=start_time.minute)
+                                    now_epoch = int(_time.time())
                                     try:
                                         departure_time_param = int(dt.timestamp())
                                     except Exception:
-                                        departure_time_param = int(_time.time())
+                                        departure_time_param = now_epoch
+                                    # If selected time is in the past, use current time for valid traffic data
+                                    if departure_time_param < now_epoch:
+                                        departure_time_param = now_epoch
+                                        st.caption("Using current traffic because selected start time is in the past.")
 
                                 regular_result = optimizer_regular.optimize_route(
                                     regular_stops, start_time, number_of_vans,
