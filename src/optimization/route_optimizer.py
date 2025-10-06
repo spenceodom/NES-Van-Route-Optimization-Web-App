@@ -90,10 +90,11 @@ class RouteOptimizer:
                     geocoded_coords.append(None)
             return geocoded_coords
 
-        def get_route_optimization_matrix(
+    def get_route_optimization_matrix(
             self,
             depot_coords: Tuple[float, float],
-            stop_coords: List[Tuple[float, float]]
+            stop_coords: List[Tuple[float, float]],
+            departure_time: Optional[str] = None
         ) -> Tuple[List[List[Optional[int]]], List[List[Optional[int]]]]:
             """
             Get distance and duration matrices from Google Maps Distance Matrix API.
@@ -107,7 +108,7 @@ class RouteOptimizer:
             """
             # Build full [depot + stops] x [depot + stops] matrices via chunked HTTP calls
             all_coords: List[Tuple[float, float]] = [depot_coords] + stop_coords
-            return self.get_distance_matrix(all_coords, all_coords)
+            return self.get_distance_matrix(all_coords, all_coords, departure_time=departure_time)
 
         def get_distance_matrix(
             self,
@@ -191,7 +192,10 @@ class RouteOptimizer:
         self,
         stops: List[StopModel],
         start_time,
-        num_vehicles: int = 1
+        num_vehicles: int = 1,
+        *,
+        departure_time_iso: Optional[str] = None,
+        search_seconds: int = 60
     ) -> Dict[str, Any]:
         """
         Optimize routes for multiple vehicles using real addresses and Google Maps
@@ -238,7 +242,7 @@ class RouteOptimizer:
 
             # Step 2: Get distance matrix from Google Maps
             distance_matrix, duration_matrix = self.gmaps_service.get_route_optimization_matrix(
-                depot_coords, valid_coords
+                depot_coords, valid_coords, departure_time=departure_time_iso
             )
 
             # Step 3: Run optimization
@@ -316,7 +320,10 @@ class RouteOptimizer:
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
             search_parameters.first_solution_strategy = (
                 routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
-            search_parameters.time_limit.seconds = 10
+            search_parameters.local_search_metaheuristic = (
+                routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+            )
+            search_parameters.time_limit.seconds = max(5, int(search_seconds))
 
             solution = routing.SolveWithParameters(search_parameters)
 
@@ -420,7 +427,10 @@ class RouteOptimizer:
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
             search_parameters.first_solution_strategy = (
                 routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
-            search_parameters.time_limit.seconds = 15
+            search_parameters.local_search_metaheuristic = (
+                routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
+            )
+            search_parameters.time_limit.seconds = max(5, int(search_seconds))
 
             solution = routing.SolveWithParameters(search_parameters)
 

@@ -116,6 +116,12 @@ def main():
         if is_admin:
             debug = st.checkbox("Debug mode (show tracebacks)", value=False)
 
+        # Optimization settings
+        st.markdown("**Optimization Settings**")
+        use_traffic = st.checkbox("Traffic-aware durations (use start time)", value=True)
+        effort_seconds = st.slider("Optimization effort (seconds)", min_value=5, max_value=120, value=60, step=5,
+                                   help="Higher values can improve route quality at the cost of compute time")
+
         # API Key with server-managed fallback (hide UI when managed key exists)
         managed_api_key = None
         try:
@@ -288,7 +294,21 @@ def main():
                             # Optimize regular routes
                             if regular_stops:
                                 st.subheader("Regular Van Routes")
-                                regular_result = optimizer_regular.optimize_route(regular_stops, start_time, number_of_vans)
+                                # Build departure_time_iso if traffic-aware
+                                departure_time_iso = None
+                                if use_traffic:
+                                    import datetime
+                                    today = datetime.date.today()
+                                    dt = datetime.datetime(year=today.year, month=today.month, day=today.day,
+                                                           hour=start_time.hour, minute=start_time.minute)
+                                    # ISO 8601 is acceptable, Google supports 'now' or timestamp; we pass ISO for clarity
+                                    departure_time_iso = dt.isoformat()
+
+                                regular_result = optimizer_regular.optimize_route(
+                                    regular_stops, start_time, number_of_vans,
+                                    departure_time_iso=departure_time_iso,
+                                    search_seconds=effort_seconds
+                                )
 
                                 if regular_result['geocoding_errors']:
                                     st.warning(" Some addresses could not be geocoded:")
@@ -329,7 +349,11 @@ def main():
                                 # For wheelchair van, allow all wheelchair passengers plus at most 1 regular passenger
                                 wc_capacity = sum(len(s.passengers) for s in wheelchair_stops)
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
-                                wheelchair_result = optimizer_wheelchair.optimize_route(wheelchair_stops, start_time, 1)
+                                wheelchair_result = optimizer_wheelchair.optimize_route(
+                                    wheelchair_stops, start_time, 1,
+                                    departure_time_iso=departure_time_iso,
+                                    search_seconds=effort_seconds
+                                )
 
                                 if wheelchair_result['geocoding_errors']:
                                     for error in wheelchair_result['geocoding_errors']:
