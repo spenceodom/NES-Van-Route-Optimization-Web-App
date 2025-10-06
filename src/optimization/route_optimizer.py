@@ -4,6 +4,8 @@ Real OR-Tools TSP/VRP implementation with Google Maps API integration
 """
 
 import logging
+import os
+import requests
 from typing import List, Optional, Tuple, Dict, Any
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
@@ -27,11 +29,12 @@ class RouteOptimizer:
             Args:
                 api_key: Google Maps API key (optional, will use env var if not provided)
             """
-            self.api_key = api_key
+            self.api_key = (api_key or os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
             if not self.api_key:
-                self.api_key = os.getenv("GOOGLE_MAPS_API_KEY")
-                if not self.api_key:
-                    raise ValueError("Google Maps API key not provided. Please set GOOGLE_MAPS_API_KEY environment variable.")
+                raise ValueError("Google Maps API key not provided. Please set GOOGLE_MAPS_API_KEY environment variable or secrets.")
+            # Basic sanitation to avoid hidden control chars
+            if any((ord(c) < 32) for c in self.api_key):
+                raise ValueError("Google Maps API key contains invalid characters. Paste a clean plain-text key.")
 
             self.base_url = "https://maps.googleapis.com/maps/api/geocode/json"
             self.distance_matrix_url = "https://maps.googleapis.com/maps/api/distancematrix/json"
@@ -102,46 +105,74 @@ class RouteOptimizer:
             Returns:
                 Tuple of (distance_matrix, duration_matrix).
             """
-            origins = [f"{depot_coords[0]},{depot_coords[1]}"]
-            destinations = [f"{coord[0]},{coord[1]}" for coord in stop_coords]
+            # Build full [depot + stops] x [depot + stops] matrices via chunked HTTP calls
+            all_coords: List[Tuple[float, float]] = [depot_coords] + stop_coords
+            return self.get_distance_matrix(all_coords, all_coords)
 
-            params = {
-                "origins": "|".join(origins),
-                "destinations": "|".join(destinations),
-                "departure_time": "now", # Or a specific timestamp
-                "traffic_model": "pessimistic", # Or "optimistic", "best_guess"
-                "units": "metric", # Or "imperial"
-                "key": self.api_key
-            }
+        def get_distance_matrix(
+            self,
+            origins: List[Tuple[float, float]],
+            destinations: List[Tuple[float, float]],
+            departure_time: Optional[str] = None
+        ) -> Tuple[List[List[Optional[int]]], List[List[Optional[int]]]]:
+            try:
+                num_origins = len(origins)
+                num_destinations = len(destinations)
 
-            distance_response = requests.get(self.distance_matrix_url, params=params)
-            distance_response.raise_for_status()
-            distance_data = distance_response.json()
+                distance_matrix: List[List[Optional[int]]] = [
+                    [None for _ in range(num_destinations)] for _ in range(num_origins)
+                ]
+                duration_matrix: List[List[Optional[int]]] = [
+                    [None for _ in range(num_destinations)] for _ in range(num_origins)
+                ]
 
-            # Extract distance and duration matrices
-            distance_matrix = []
-            duration_matrix = []
+                max_elements = 100
+                rows_chunk = min(num_origins, 25)
+                cols_chunk = max(1, min(num_destinations, max_elements // max(1, rows_chunk)))
+                if rows_chunk * cols_chunk > max_elements:
+                    cols_chunk = max_elements // rows_chunk
+                    cols_chunk = max(1, cols_chunk)
 
-            if distance_data.get("status") == "OK":
-                rows = distance_data.get("rows", [])
-                for row in rows:
-                    distance_row = []
-                    duration_row = []
-                    elements = row.get("elements", [])
-                    for element in elements:
-                        distance = element.get("distance", {}).get("value")
-                        duration = element.get("duration", {}).get("value")
-                        distance_row.append(distance)
-                        duration_row.append(duration)
-                    distance_matrix.append(distance_row)
-                    duration_matrix.append(duration_row)
-            else:
-                logger.error(f"Distance Matrix API error: {distance_data.get('error_message')}")
-                # Return empty matrices or raise an error
-                distance_matrix = [[None] * len(stop_coords) for _ in range(len(origins))]
-                duration_matrix = [[None] * len(stop_coords) for _ in range(len(origins))]
+                for row_start in range(0, num_origins, rows_chunk):
+                    row_end = min(num_origins, row_start + rows_chunk)
+                    origin_block = origins[row_start:row_end]
+                    origin_strs = [f"{lat},{lng}" for lat, lng in origin_block]
 
-            return distance_matrix, duration_matrix
+                    for col_start in range(0, num_destinations, cols_chunk):
+                        col_end = min(num_destinations, col_start + cols_chunk)
+                        dest_block = destinations[col_start:col_end]
+                        dest_strs = [f"{lat},{lng}" for lat, lng in dest_block]
+
+                        params: Dict[str, Any] = {
+                            "origins": "|".join(origin_strs),
+                            "destinations": "|".join(dest_strs),
+                            "mode": "driving",
+                            "units": "metric",
+                            "key": self.api_key,
+                        }
+                        if departure_time:
+                            params["departure_time"] = departure_time
+
+                        resp = requests.get(self.distance_matrix_url, params=params, timeout=30)
+                        resp.raise_for_status()
+                        result = resp.json()
+                        if result.get("status") != "OK":
+                            raise ValueError(f"Distance Matrix API returned status: {result.get('status')} {result.get('error_message','')}")
+
+                        for i_row, row in enumerate(result.get("rows", [])):
+                            elements = row.get("elements", [])
+                            for j_col, element in enumerate(elements):
+                                if element.get("status") == "OK":
+                                    distance_matrix[row_start + i_row][col_start + j_col] = element["distance"]["value"]
+                                    duration_matrix[row_start + i_row][col_start + j_col] = element["duration"]["value"]
+                                else:
+                                    distance_matrix[row_start + i_row][col_start + j_col] = None
+                                    duration_matrix[row_start + i_row][col_start + j_col] = None
+
+                return distance_matrix, duration_matrix
+            except Exception as e:
+                logger.error(f"Failed to get distance matrix: {e}")
+                raise ValueError(f"Failed to get distance matrix: {e}")
 
     def __init__(self, depot_address: str, vehicle_capacity: int = 15, api_key: Optional[str] = None):
         """
@@ -154,56 +185,6 @@ class RouteOptimizer:
         """
         self.depot_address = depot_address
         self.vehicle_capacity = vehicle_capacity
-
-        # Defensive check: ensure google_maps.py source has no null bytes on deployed envs
-        try:
-            import importlib.util
-            import os
-            spec = importlib.util.find_spec('src.services.google_maps')
-            gm_path = spec.origin if spec and spec.origin else os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'services', 'google_maps.py'))
-            try:
-                with open(gm_path, 'rb') as f:
-                    data = f.read()
-                if b'\x00' in data:
-                    raise ValueError("Detected invalid null bytes in src/services/google_maps.py on the server. Redeploy a clean copy from GitHub or restart the app to clear corrupted files.")
-            except FileNotFoundError:
-                # If the file isn't where expected, proceed to import and let Python raise a clear error
-                pass
-        except Exception:
-            # Non-fatal: continue; import will still be attempted below
-            pass
-
-        # Lazy import to avoid startup failures if maps service has environment issues
-        try:
-            # Prefer the clean client copy first
-            try:
-                from src.services.maps_client import GoogleMapsService as _GoogleMapsService  # type: ignore
-            except Exception:
-                from src.services.google_maps import GoogleMapsService as _GoogleMapsService
-        except SyntaxError as se:
-            # Attempt runtime sanitation fallback: strip null bytes and import from a temp file
-            try:
-                import tempfile
-                import importlib.util as _ilu
-                # gm_path computed above in defensive check
-                gm_path_local = locals().get('gm_path', None)
-                if not gm_path_local:
-                    raise RuntimeError('google_maps.py path not found for sanitation')
-                with open(gm_path_local, 'rb') as f:
-                    data = f.read()
-                cleaned = data.replace(b'\x00', b'')
-                tmp_path = os.path.join(tempfile.gettempdir(), 'google_maps_clean.py')
-                with open(tmp_path, 'wb') as f:
-                    f.write(cleaned)
-                spec2 = _ilu.spec_from_file_location('google_maps_clean', tmp_path)
-                gm_mod = _ilu.module_from_spec(spec2)
-                assert spec2 and spec2.loader
-                spec2.loader.exec_module(gm_mod)
-                _GoogleMapsService = getattr(gm_mod, 'GoogleMapsService')
-            except Exception as sanitize_error:
-                # Wrap syntax error to provide clearer guidance
-                raise ValueError("Failed to load Google Maps service due to a corrupted source file on the server. Please redeploy/refresh the app so that src/services/google_maps.py is a clean UTF-8 text file.") from se
-
         self.gmaps_service = self.GoogleMapsService(api_key)
 
     def optimize_route(
