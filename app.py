@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import math
+from collections import OrderedDict
 import pandas as pd
 from datetime import time
 from src.models.route_models import StopModel
@@ -311,20 +312,24 @@ def main():
                                             duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
                                             st.write(f" Estimated time: {duration_text}")
 
-                                            # Show passengers grouped by unique stop address: Stop N | Address, then names
-                                            printed_addresses = set()
-                                            stop_counter = 1
+                                            # Aggregate passengers by address in route order (first occurrence wins ordering)
+                                            address_to_names = OrderedDict()
                                             for stop_idx in route['stops']:
-                                                if 0 <= stop_idx - 1 < len(regular_stops):  # Convert back to 0-based index
-                                                    stop = regular_stops[stop_idx - 1]  # -1 because depot is index 0
-                                                    if stop.address in printed_addresses:
-                                                        continue
-                                                    printed_addresses.add(stop.address)
-                                                    st.write(f"Stop {stop_counter} | {stop.address}")
-                                                    for passenger_name in stop.passengers:
-                                                        st.write(f"{passenger_name}")
-                                                    st.write("")  # space between stops
-                                                    stop_counter += 1
+                                                if 0 <= stop_idx - 1 < len(regular_stops):
+                                                    stop = regular_stops[stop_idx - 1]
+                                                    addr = stop.address
+                                                    if addr not in address_to_names:
+                                                        address_to_names[addr] = []
+                                                    address_to_names[addr].extend(stop.passengers)
+
+                                            # Render grouped stops
+                                            stop_counter = 1
+                                            for addr, names in address_to_names.items():
+                                                st.write(f"Stop {stop_counter} | {addr}")
+                                                for passenger_name in names:
+                                                    st.write(f"{passenger_name}")
+                                                st.write("")  # space between stops
+                                                stop_counter += 1
 
                                             total_distance += route['distance']
                                             if 'duration' in route:
@@ -354,20 +359,24 @@ def main():
                                     if wheelchair_van_regular_passenger:
                                         st.info(f"This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")
 
-                                    # Show passengers grouped by unique stop address: Stop N | Address, then names
-                                    printed_addresses_wc = set()
-                                    stop_counter_wc = 1
+                                    # Aggregate passengers by address in route order for wheelchair van
+                                    address_to_names_wc = OrderedDict()
                                     for stop_idx in route['stops']:
                                         if 0 <= stop_idx - 1 < len(wheelchair_stops):
                                             stop = wheelchair_stops[stop_idx - 1]
-                                            if stop.address in printed_addresses_wc:
-                                                continue
-                                            printed_addresses_wc.add(stop.address)
-                                            st.write(f"Stop {stop_counter_wc} | {stop.address}")
-                                            for passenger_name in stop.passengers:
-                                                st.write(f"{passenger_name}")
-                                            st.write("")  # space between stops
-                                            stop_counter_wc += 1
+                                            addr = stop.address
+                                            if addr not in address_to_names_wc:
+                                                address_to_names_wc[addr] = []
+                                            address_to_names_wc[addr].extend(stop.passengers)
+
+                                    # Render grouped stops
+                                    stop_counter_wc = 1
+                                    for addr, names in address_to_names_wc.items():
+        								st.write(f"Stop {stop_counter_wc} | {addr}")
+                                        for passenger_name in names:
+                                            st.write(f"{passenger_name}")
+                                        st.write("")  # space between stops
+                                        stop_counter_wc += 1
 
                                     st.write("")  # space after wheelchair van
                                 else:
