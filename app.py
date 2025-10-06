@@ -116,9 +116,9 @@ def main():
         if is_admin:
             debug = st.checkbox("Debug mode (show tracebacks)", value=False)
 
-        # Optimization settings
+        # Optimization settings (typical conditions, no real-time traffic)
         st.markdown("**Optimization Settings**")
-        use_traffic = st.checkbox("Traffic-aware durations (use start time)", value=True)
+        st.caption("Routes are optimized using typical drive times (no real-time traffic).")
         effort_seconds = st.slider("Optimization effort (seconds)", min_value=5, max_value=120, value=60, step=5,
                                    help="Higher values can improve route quality at the cost of compute time")
 
@@ -293,26 +293,12 @@ def main():
                             # Optimize regular routes
                             if regular_stops:
                                 st.subheader("Regular Van Routes")
-                                # Build departure_time parameter for Distance Matrix (epoch seconds)
+                                # Real-time traffic disabled: do not pass departure_time
                                 departure_time_param = None
-                                if use_traffic:
-                                    import datetime, time as _time
-                                    today = datetime.date.today()
-                                    dt = datetime.datetime(year=today.year, month=today.month, day=today.day,
-                                                           hour=start_time.hour, minute=start_time.minute)
-                                    now_epoch = int(_time.time())
-                                    try:
-                                        departure_time_param = int(dt.timestamp())
-                                    except Exception:
-                                        departure_time_param = now_epoch
-                                    # If selected time is in the past, use current time for valid traffic data
-                                    if departure_time_param < now_epoch:
-                                        departure_time_param = now_epoch
-                                        st.caption("Using current traffic because selected start time is in the past.")
 
                                 regular_result = optimizer_regular.optimize_route(
                                     regular_stops, start_time, number_of_vans,
-                                    departure_time_iso=str(departure_time_param) if departure_time_param is not None else None,
+                                    departure_time_iso=None,
                                     search_seconds=effort_seconds
                                 )
 
@@ -357,7 +343,7 @@ def main():
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
                                 wheelchair_result = optimizer_wheelchair.optimize_route(
                                     wheelchair_stops, start_time, 1,
-                                    departure_time_iso=str(departure_time_param) if departure_time_param is not None else None,
+                                    departure_time_iso=None,
                                     search_seconds=effort_seconds
                                 )
 

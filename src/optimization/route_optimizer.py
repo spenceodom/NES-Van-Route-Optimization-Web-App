@@ -151,14 +151,7 @@ class RouteOptimizer:
                             "units": "metric",
                             "key": self.api_key,
                         }
-                        if departure_time:
-                            # Google requires "now" or a unix timestamp (seconds) for traffic-aware durations
-                            # We accept either stringified int or int
-                            try:
-                                ts = int(departure_time)
-                                params["departure_time"] = ts
-                            except Exception:
-                                params["departure_time"] = "now"
+                        # Real-time traffic disabled: do not send departure_time
 
                         resp = requests.get(self.distance_matrix_url, params=params, timeout=30)
                         resp.raise_for_status()
