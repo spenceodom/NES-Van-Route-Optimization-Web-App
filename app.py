@@ -347,7 +347,12 @@ def main():
                                 # For wheelchair van, allow all wheelchair passengers plus at most 1 regular passenger
                                 wc_capacity = sum(len(s.passengers) for s in wheelchair_stops)
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
-                                wheelchair_result = optimizer_wheelchair.optimize_route(wheelchair_stops, start_time, 1)
+                                wheelchair_result = optimizer_wheelchair.optimize_route(
+                                    wheelchair_stops,
+                                    start_time,
+                                    1,
+                                    max_regular_non_wheelchair=1
+                                )
 
                                 if wheelchair_result['geocoding_errors']:
                                     for error in wheelchair_result['geocoding_errors']:

@@ -191,7 +191,8 @@ class RouteOptimizer:
         self,
         stops: List[StopModel],
         start_time,
-        num_vehicles: int = 1
+        num_vehicles: int = 1,
+        max_regular_non_wheelchair: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Optimize routes for multiple vehicles using real addresses and Google Maps
@@ -244,10 +245,21 @@ class RouteOptimizer:
             # Step 3: Run optimization
             if num_vehicles == 1:
                 # Single vehicle - use TSP
-                result = self._optimize_single_vehicle(distance_matrix, duration_matrix, valid_stops)
+                result = self._optimize_single_vehicle(
+                    distance_matrix,
+                    duration_matrix,
+                    valid_stops,
+                    max_regular_non_wheelchair=max_regular_non_wheelchair
+                )
             else:
                 # Multiple vehicles - use VRP
-                result = self._optimize_multi_vehicle(distance_matrix, duration_matrix, valid_stops, num_vehicles)
+                result = self._optimize_multi_vehicle(
+                    distance_matrix,
+                    duration_matrix,
+                    valid_stops,
+                    num_vehicles,
+                    max_regular_non_wheelchair=max_regular_non_wheelchair
+                )
 
             # Add geocoding errors to result
             result['geocoding_errors'] = geocoding_errors
@@ -289,7 +301,8 @@ class RouteOptimizer:
         self,
         distance_matrix: List[List[Optional[int]]],
         duration_matrix: List[List[Optional[int]]],
-        stops: List[StopModel]
+        stops: List[StopModel],
+        max_regular_non_wheelchair: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Optimize route for single vehicle (TSP)
@@ -312,6 +325,24 @@ class RouteOptimizer:
 
             transit_callback_index = routing.RegisterTransitCallback(duration_cost_callback)
             routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
+
+            # Optionally add a capacity dimension to limit non-wheelchair passengers (e.g., front seat only)
+            if max_regular_non_wheelchair is not None:
+                def regular_demand_callback(from_index):
+                    from_node = manager.IndexToNode(from_index)
+                    if from_node == 0:
+                        return 0
+                    stop = stops[from_node - 1]
+                    return 0 if stop.wheelchair else len(stop.passengers)
+
+                regular_demand_index = routing.RegisterUnaryTransitCallback(regular_demand_callback)
+                routing.AddDimensionWithVehicleCapacity(
+                    regular_demand_index,
+                    0,
+                    [max_regular_non_wheelchair],
+                    True,
+                    'RegularFrontSeat'
+                )
 
             # Add a time dimension to balance per-van route duration (minimize max route time)
             try:
@@ -392,7 +423,8 @@ class RouteOptimizer:
         distance_matrix: List[List[Optional[int]]],
         duration_matrix: List[List[Optional[int]]],
         stops: List[StopModel],
-        num_vehicles: int
+        num_vehicles: int,
+        max_regular_non_wheelchair: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Optimize routes for multiple vehicles (VRP)
@@ -430,6 +462,24 @@ class RouteOptimizer:
                 True,  # start cumul to zero
                 'Capacity'
             )
+
+            # Optionally add a second capacity dimension to limit non-wheelchair passengers per vehicle
+            if max_regular_non_wheelchair is not None:
+                def regular_demand_callback(from_index):
+                    from_node = manager.IndexToNode(from_index)
+                    if from_node == 0:
+                        return 0
+                    stop = stops[from_node - 1]
+                    return 0 if stop.wheelchair else len(stop.passengers)
+
+                regular_demand_index = routing.RegisterUnaryTransitCallback(regular_demand_callback)
+                routing.AddDimensionWithVehicleCapacity(
+                    regular_demand_index,
+                    0,
+                    [max_regular_non_wheelchair] * num_vehicles,
+                    True,
+                    'RegularFrontSeat'
+                )
 
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
             search_parameters.first_solution_strategy = (
