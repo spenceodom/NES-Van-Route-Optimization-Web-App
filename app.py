@@ -103,6 +103,13 @@ def main():
             value=2,
             help="How many regular vans are available for this route? (Excludes wheelchair van)"
         )
+        number_of_wheelchair_vans = st.slider(
+            "Number of Wheelchair Vans",
+            min_value=1,
+            max_value=4,
+            value=1,
+            help="How many wheelchair vans are available for this route?"
+        )
         # Fixed route start time (time selection removed)
         start_time = time(8, 0)
         st.divider()
@@ -343,14 +350,14 @@ def main():
 
                             # Handle wheelchair routes (separate optimization)
                             if wheelchair_stops:
-                                st.subheader("Wheelchair Van Route")
-                                # For wheelchair van, allow all wheelchair passengers plus at most 1 regular passenger
+                                st.subheader("Wheelchair Van Routes")
+                                # For wheelchair vans, allow all wheelchair passengers plus at most 1 regular passenger per van
                                 wc_capacity = sum(len(s.passengers) for s in wheelchair_stops)
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
                                 wheelchair_result = optimizer_wheelchair.optimize_route(
                                     wheelchair_stops,
                                     start_time,
-                                    1,
+                                    number_of_wheelchair_vans,
                                     max_regular_non_wheelchair=1
                                 )
 
@@ -359,33 +366,35 @@ def main():
                                         st.warning(f"Wheelchair geocoding error: {error}")
 
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
-                                    route = wheelchair_result['vehicle_routes'][0]
-                                    duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
-                                    st.write(f" Estimated time: {duration_text}")
-                                    
-                                    if wheelchair_van_regular_passenger:
-                                        st.info(f"This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")
+                                    for wc_route in wheelchair_result['vehicle_routes']:
+                                        if wc_route['stops']:
+                                            st.markdown(f"**Van {wc_route['vehicle_id'] + 1}:**")
+                                            duration_text = format_duration(wc_route.get('duration', 0)) if 'duration' in wc_route else "—"
+                                            st.write(f" Estimated time: {duration_text}")
 
-                                    # Aggregate passengers by address in route order for wheelchair van
-                                    address_to_names_wc = OrderedDict()
-                                    for stop_idx in route['stops']:
-                                        if 0 <= stop_idx - 1 < len(wheelchair_stops):
-                                            stop = wheelchair_stops[stop_idx - 1]
-                                            addr = stop.address
-                                            if addr not in address_to_names_wc:
-                                                address_to_names_wc[addr] = []
-                                            address_to_names_wc[addr].extend(stop.passengers)
+                                            if wheelchair_van_regular_passenger:
+                                                st.info(f"This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")
 
-                                    # Render grouped stops
-                                    stop_counter_wc = 1
-                                    for addr, names in address_to_names_wc.items():
-                                        st.write(f"Stop {stop_counter_wc} | {addr}")
-                                        for passenger_name in names:
-                                            st.write(f"{passenger_name}")
-                                        st.write("")  # space between stops
-                                        stop_counter_wc += 1
+                                            # Aggregate passengers by address in route order for wheelchair van
+                                            address_to_names_wc = OrderedDict()
+                                            for stop_idx in wc_route['stops']:
+                                                if 0 <= stop_idx - 1 < len(wheelchair_stops):
+                                                    stop = wheelchair_stops[stop_idx - 1]
+                                                    addr = stop.address
+                                                    if addr not in address_to_names_wc:
+                                                        address_to_names_wc[addr] = []
+                                                    address_to_names_wc[addr].extend(stop.passengers)
 
-                                    st.write("")  # space after wheelchair van
+                                            # Render grouped stops
+                                            stop_counter_wc = 1
+                                            for addr, names in address_to_names_wc.items():
+                                                st.write(f"Stop {stop_counter_wc} | {addr}")
+                                                for passenger_name in names:
+                                                    st.write(f"{passenger_name}")
+                                                st.write("")  # space between stops
+                                                stop_counter_wc += 1
+
+                                            st.write("")  # space between wheelchair vans
                                 else:
                                     st.write("No wheelchair passengers selected.")
                             else:
