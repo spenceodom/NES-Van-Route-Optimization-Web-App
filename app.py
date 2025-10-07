@@ -339,59 +339,53 @@ def main():
                                 if not regular_result['is_feasible']:
                                     st.error(" Could not find feasible routes for regular passengers")
                                 else:
-                                    # Display optimized routes as card grid
+                                    # Display optimized routes as a single grid HTML block
                                     total_distance = 0
                                     total_duration = 0
-                                    st.markdown('<div class="routes-grid">', unsafe_allow_html=True)
+                                    regular_cards: list[str] = []
                                     for route in regular_result['vehicle_routes']:
-                                        if route['stops']:  # Only show routes with stops
-                                            st.markdown('<div class="card"><div class="card-body">', unsafe_allow_html=True)
-                                            with st.container():
-                                                st.markdown(f"**Van {route['vehicle_id'] + 1}**")
-                                                duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
+                                        if not route['stops']:
+                                            continue
+                                        duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
+                                        address_to_names = OrderedDict()
+                                        for stop_idx in route['stops']:
+                                            if 0 <= stop_idx - 1 < len(regular_stops):
+                                                stop = regular_stops[stop_idx - 1]
+                                                addr = stop.address
+                                                if addr not in address_to_names:
+                                                    address_to_names[addr] = []
+                                                address_to_names[addr].extend(stop.passengers)
 
-                                                # Aggregate passengers by address in route order (first occurrence wins ordering)
-                                                address_to_names = OrderedDict()
-                                                for stop_idx in route['stops']:
-                                                    if 0 <= stop_idx - 1 < len(regular_stops):
-                                                        stop = regular_stops[stop_idx - 1]
-                                                        addr = stop.address
-                                                        if addr not in address_to_names:
-                                                            address_to_names[addr] = []
-                                                        address_to_names[addr].extend(stop.passengers)
+                                        stop_counter = 1
+                                        stops_html_parts: list[str] = []
+                                        for addr, names in address_to_names.items():
+                                            passengers_html = "".join([f"<div class='passenger'>{p}</div>" for p in names])
+                                            stops_html_parts.append(
+                                                f"<div class='stop'>"
+                                                f"<div class='stop-row'>"
+                                                f"<div class='stop-num'>{stop_counter}</div>"
+                                                f"<div class='stop-content'><div class='stop-address'>Stop {stop_counter} | {addr}</div>{passengers_html}</div>"
+                                                f"</div>"
+                                                f"</div>"
+                                            )
+                                            stop_counter += 1
 
-                                                # Header section with meta
-                                                st.markdown(
-                                                    f"<div class='card-header'><div class='card-title'>Van {route['vehicle_id'] + 1}</div>"
-                                                    f"<span class='pill'>{len(address_to_names)} Stops</span></div>",
-                                                    unsafe_allow_html=True
-                                                )
-                                                st.markdown(
-                                                    f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg>"
-                                                    f"<span>Estimated time: {duration_text}</span></div>",
-                                                    unsafe_allow_html=True
-                                                )
+                                        card_html = (
+                                            "<div class='card'><div class='card-body'>"
+                                            f"<div class='card-header'><div class='card-title'>Van {route['vehicle_id'] + 1}</div><span class='pill'>{len(address_to_names)} Stops</span></div>"
+                                            f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg><span>Estimated time: {duration_text}</span></div>"
+                                            + "".join(stops_html_parts) +
+                                            "</div></div>"
+                                        )
 
-                                                # Render grouped stops as sections
-                                                stop_counter = 1
-                                                for addr, names in address_to_names.items():
-                                                    st.markdown("<div class='stop'>", unsafe_allow_html=True)
-                                                    st.markdown(
-                                                        f"<div class='stop-row'><div class='stop-num'>{stop_counter}</div>"
-                                                        f"<div class='stop-content'><div class='stop-address'>Stop {stop_counter} | {addr}</div>",
-                                                        unsafe_allow_html=True
-                                                    )
-                                                    for passenger_name in names:
-                                                        st.markdown(f"<div class='passenger'>{passenger_name}</div>", unsafe_allow_html=True)
-                                                    st.markdown("</div></div></div>", unsafe_allow_html=True)
-                                                    stop_counter += 1
+                                        regular_cards.append(card_html)
+                                        total_distance += route['distance']
+                                        if 'duration' in route:
+                                            total_duration += route['duration']
 
-                                            total_distance += route['distance']
-                                            if 'duration' in route:
-                                                total_duration += route['duration']
-                                            st.markdown('</div></div>', unsafe_allow_html=True)
-
-                                    st.markdown('</div>', unsafe_allow_html=True)
+                                    if regular_cards:
+                                        grid_html = "<div class='routes-grid'>" + "".join(regular_cards) + "</div>"
+                                        st.markdown(grid_html, unsafe_allow_html=True)
 
                                     # No overall totals per requirements
 
@@ -413,55 +407,46 @@ def main():
                                         st.warning(f"Wheelchair geocoding error: {error}")
 
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
-                                    st.markdown('<div class="routes-grid">', unsafe_allow_html=True)
+                                    wc_cards: list[str] = []
                                     for wc_route in wheelchair_result['vehicle_routes']:
-                                        if wc_route['stops']:
-                                            st.markdown('<div class="card"><div class="card-body">', unsafe_allow_html=True)
-                                            with st.container():
-                                                st.markdown(f"**Van {wc_route['vehicle_id'] + 1}**")
-                                                duration_text = format_duration(wc_route.get('duration', 0)) if 'duration' in wc_route else "—"
+                                        if not wc_route['stops']:
+                                            continue
+                                        duration_text = format_duration(wc_route.get('duration', 0)) if 'duration' in wc_route else "—"
+                                        address_to_names_wc = OrderedDict()
+                                        for stop_idx in wc_route['stops']:
+                                            if 0 <= stop_idx - 1 < len(wheelchair_stops):
+                                                stop = wheelchair_stops[stop_idx - 1]
+                                                addr = stop.address
+                                                if addr not in address_to_names_wc:
+                                                    address_to_names_wc[addr] = []
+                                                address_to_names_wc[addr].extend(stop.passengers)
 
-                                                if wheelchair_van_regular_passenger:
-                                                    st.info(f"This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")
+                                        stop_counter_wc = 1
+                                        wc_stops_html_parts: list[str] = []
+                                        for addr, names in address_to_names_wc.items():
+                                            passengers_html = "".join([f"<div class='passenger'>{p}</div>" for p in names])
+                                            wc_stops_html_parts.append(
+                                                f"<div class='stop'>"
+                                                f"<div class='stop-row'>"
+                                                f"<div class='stop-num'>{stop_counter_wc}</div>"
+                                                f"<div class='stop-content'><div class='stop-address'>Stop {stop_counter_wc} | {addr}</div>{passengers_html}</div>"
+                                                f"</div>"
+                                                f"</div>"
+                                            )
+                                            stop_counter_wc += 1
 
-                                                # Aggregate passengers by address in route order for wheelchair van
-                                                address_to_names_wc = OrderedDict()
-                                                for stop_idx in wc_route['stops']:
-                                                    if 0 <= stop_idx - 1 < len(wheelchair_stops):
-                                                        stop = wheelchair_stops[stop_idx - 1]
-                                                        addr = stop.address
-                                                        if addr not in address_to_names_wc:
-                                                            address_to_names_wc[addr] = []
-                                                        address_to_names_wc[addr].extend(stop.passengers)
+                                        wc_card_html = (
+                                            "<div class='card'><div class='card-body'>"
+                                            f"<div class='card-header'><div class='card-title'>Van {wc_route['vehicle_id'] + 1}</div><span class='pill'>{len(address_to_names_wc)} Stops</span></div>"
+                                            f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg><span>Estimated time: {duration_text}</span></div>"
+                                            + "".join(wc_stops_html_parts) +
+                                            "</div></div>"
+                                        )
+                                        wc_cards.append(wc_card_html)
 
-                                                # Header section with meta
-                                                st.markdown(
-                                                    f"<div class='card-header'><div class='card-title'>Van {wc_route['vehicle_id'] + 1}</div>"
-                                                    f"<span class='pill'>{len(address_to_names_wc)} Stops</span></div>",
-                                                    unsafe_allow_html=True
-                                                )
-                                                st.markdown(
-                                                    f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg>"
-                                                    f"<span>Estimated time: {duration_text}</span></div>",
-                                                    unsafe_allow_html=True
-                                                )
-
-                                                # Render grouped stops
-                                                stop_counter_wc = 1
-                                                for addr, names in address_to_names_wc.items():
-                                                    st.markdown("<div class='stop'>", unsafe_allow_html=True)
-                                                    st.markdown(
-                                                        f"<div class='stop-row'><div class='stop-num'>{stop_counter_wc}</div>"
-                                                        f"<div class='stop-content'><div class='stop-address'>Stop {stop_counter_wc} | {addr}</div>",
-                                                        unsafe_allow_html=True
-                                                    )
-                                                    for passenger_name in names:
-                                                        st.markdown(f"<div class='passenger'>{passenger_name}</div>", unsafe_allow_html=True)
-                                                    st.markdown("</div></div></div>", unsafe_allow_html=True)
-                                                    stop_counter_wc += 1
-
-                                            st.markdown('</div></div>', unsafe_allow_html=True)
-                                    st.markdown('</div>', unsafe_allow_html=True)
+                                    if wc_cards:
+                                        wc_grid_html = "<div class='routes-grid'>" + "".join(wc_cards) + "</div>"
+                                        st.markdown(wc_grid_html, unsafe_allow_html=True)
                                 else:
                                     st.write("No wheelchair passengers selected.")
                             else:
