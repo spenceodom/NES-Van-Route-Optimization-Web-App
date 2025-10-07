@@ -168,8 +168,10 @@ def main():
 
             for idx, name in enumerate(all_names):
                 col = cols[idx % 3]
-                checked = st.session_state.get(f"name_{idx}", False)
-                if col.checkbox(name, key=f"name_{idx}", value=checked):
+                key = f"name_{idx}"
+                if key not in st.session_state:
+                    st.session_state[key] = False
+                if col.checkbox(name, key=key):
                     selected_names.append(name)
                     total_selected += 1
 
