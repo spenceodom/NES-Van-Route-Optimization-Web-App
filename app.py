@@ -155,6 +155,11 @@ def main():
         .card-body { padding: 16px; }
         .card-header { display: flex; align-items: center; justify-content: space-between; }
         .card-title { font-weight: 700; font-size: 20px; color: #111827; }
+        .title-blue { color: #2563EB; }
+        .title-green { color: #16A34A; }
+        .title-red { color: #DC2626; }
+        .title-purple { color: #7C3AED; }
+        .title-amber { color: #D97706; }
         .pill { background: #EEF2FF; color: #4338CA; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 9999px; }
         .meta { display:flex; align-items:center; color:#6B7280; font-size: 14px; margin-top: 6px; }
         .meta .clock { width: 18px; height: 18px; margin-right: 6px; }
@@ -312,7 +317,7 @@ def main():
                         st.error(" Please configure Google Maps API key first")
                         return
 
-                    with st.spinner(" Optimizing routes with real-time traffic data..."):
+                    with st.spinner(" Optimizing routes..."):
                         try:
                             # Initialize optimizer with API key
                             # Force utilization of all available regular vans by tightening per-vehicle capacity
@@ -370,9 +375,13 @@ def main():
                                             )
                                             stop_counter += 1
 
+                                        # Color classes for titles by van index
+                                        color_classes = ["title-blue", "title-green", "title-red", "title-purple", "title-amber"]
+                                        title_class = color_classes[(route['vehicle_id']) % len(color_classes)]
+
                                         card_html = (
                                             "<div class='card'><div class='card-body'>"
-                                            f"<div class='card-header'><div class='card-title'>Van {route['vehicle_id'] + 1}</div><span class='pill'>{len(address_to_names)} Stops</span></div>"
+                                            f"<div class='card-header'><div class='card-title {title_class}'>Van {route['vehicle_id'] + 1}</div><span class='pill'>{len(address_to_names)} Stops</span></div>"
                                             f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg><span>Estimated time: {duration_text}</span></div>"
                                             + "".join(stops_html_parts) +
                                             "</div></div>"
@@ -435,9 +444,12 @@ def main():
                                             )
                                             stop_counter_wc += 1
 
+                                        color_classes = ["title-blue", "title-green", "title-red", "title-purple", "title-amber"]
+                                        title_class = color_classes[(wc_route['vehicle_id']) % len(color_classes)]
+
                                         wc_card_html = (
                                             "<div class='card'><div class='card-body'>"
-                                            f"<div class='card-header'><div class='card-title'>Van {wc_route['vehicle_id'] + 1}</div><span class='pill'>{len(address_to_names_wc)} Stops</span></div>"
+                                            f"<div class='card-header'><div class='card-title {title_class}'>Van {wc_route['vehicle_id'] + 1}</div><span class='pill'>{len(address_to_names_wc)} Stops</span></div>"
                                             f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg><span>Estimated time: {duration_text}</span></div>"
                                             + "".join(wc_stops_html_parts) +
                                             "</div></div>"
