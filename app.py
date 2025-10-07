@@ -48,7 +48,6 @@ def format_duration(seconds):
 
 def main():
     st.title("NES Van Route Optimizer")
-    st.markdown("Optimize daily van routes to save time, fuel, and ensure on-time pickups")
 
     # Optional admin gate controlled by APP_PASSWORD in secrets/env
     required_password = None
@@ -62,8 +61,8 @@ def main():
     is_admin = False
     if required_password:
         with st.sidebar:
-            st.markdown("**Admin Access**")
             if not st.session_state.get("authed", False):
+                st.markdown("**Admin Access**")
                 pwd = st.text_input("Admin password", type="password", key="admin_pw")
                 if pwd:
                     if pwd == required_password:
@@ -80,18 +79,19 @@ def main():
     # API Key Configuration
     with st.sidebar:
         # Depot address selection (radio buttons)
-        st.markdown("**Depot Address**")
+        st.markdown("**Day Program Address**")
         depot_option = st.radio(
-            "Select Depot Address",
+            " ",
             ("Day Program", "Other"),
-            index=0
+            index=0,
+            label_visibility="collapsed"
         )
         if depot_option == "Day Program":
             depot_address = "10404 1055 W, South Jordan, UT 84095"
-            st.info(f"Depot address set to: {depot_address}")
+            st.info(f"Day Program address set to: {depot_address}")
         else:
             depot_address = st.text_input(
-                "Enter Depot Address",
+                "Enter Day Program Address",
                 value="",
                 help="Enter the starting and ending location for all routes"
             )
@@ -270,14 +270,15 @@ def main():
                 wheelchair_count = sum(len(stop.passengers) for stop in wheelchair_stops)
                 regular_count = sum(len(stop.passengers) for stop in regular_stops)
                 
-                st.info(f" **Passenger Summary:**")
+                # Consolidated Passenger Summary into a single bubble
+                summary_lines = ["**Passenger Summary:**"]
                 if wheelchair_count > 0:
-                    st.info(f" Wheelchair van: {wheelchair_count} passengers ({len(wheelchair_stops)} stops)")
+                    summary_lines.append(f"Wheelchair van: {wheelchair_count} passengers ({len(wheelchair_stops)} stops)")
                 if regular_count > 0:
-                    st.info(f" Regular vans: {regular_count} passengers ({len(regular_stops)} stops, using {number_of_vans} vans)")
-                
+                    summary_lines.append(f"Regular vans: {regular_count} passengers ({len(regular_stops)} stops, using {number_of_vans} vans)")
                 if wheelchair_van_regular_passenger:
-                    st.info(f"Note: 1 regular passenger ({wheelchair_van_regular_passenger}) will ride in the wheelchair van to maximize efficiency")
+                    summary_lines.append(f"Note: 1 regular passenger ({wheelchair_van_regular_passenger}) will ride in the wheelchair van to maximize efficiency")
+                st.info("\n\n".join(summary_lines))
 
                 # Optimize button
                 if st.button(" Optimize Routes", disabled=not api_key):
