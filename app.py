@@ -318,28 +318,31 @@ def main():
                                     total_duration = 0
                                     for route in regular_result['vehicle_routes']:
                                         if route['stops']:  # Only show routes with stops
-                                            st.markdown(f"**Van {route['vehicle_id'] + 1}:**")
-                                            duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
-                                            st.write(f" Estimated time: {duration_text}")
+                                            with st.container():
+                                                st.markdown(f"**Van {route['vehicle_id'] + 1}**")
+                                                duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
 
-                                            # Aggregate passengers by address in route order (first occurrence wins ordering)
-                                            address_to_names = OrderedDict()
-                                            for stop_idx in route['stops']:
-                                                if 0 <= stop_idx - 1 < len(regular_stops):
-                                                    stop = regular_stops[stop_idx - 1]
-                                                    addr = stop.address
-                                                    if addr not in address_to_names:
-                                                        address_to_names[addr] = []
-                                                    address_to_names[addr].extend(stop.passengers)
+                                                # Aggregate passengers by address in route order (first occurrence wins ordering)
+                                                address_to_names = OrderedDict()
+                                                for stop_idx in route['stops']:
+                                                    if 0 <= stop_idx - 1 < len(regular_stops):
+                                                        stop = regular_stops[stop_idx - 1]
+                                                        addr = stop.address
+                                                        if addr not in address_to_names:
+                                                            address_to_names[addr] = []
+                                                        address_to_names[addr].extend(stop.passengers)
 
-                                            # Render grouped stops
-                                            stop_counter = 1
-                                            for addr, names in address_to_names.items():
-                                                st.write(f"Stop {stop_counter} | {addr}")
-                                                for passenger_name in names:
-                                                    st.write(f"{passenger_name}")
-                                                st.write("")  # space between stops
-                                                stop_counter += 1
+                                                # Header meta: time + stop count
+                                                st.caption(f"⏱️ Estimated time: {duration_text} • {len(address_to_names)} stops")
+
+                                                # Render grouped stops as sections
+                                                stop_counter = 1
+                                                for addr, names in address_to_names.items():
+                                                    st.markdown(f"**Stop {stop_counter} | {addr}**")
+                                                    for passenger_name in names:
+                                                        st.write(f"{passenger_name}")
+                                                    st.divider()
+                                                    stop_counter += 1
 
                                             total_distance += route['distance']
                                             if 'duration' in route:
@@ -369,31 +372,34 @@ def main():
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
                                     for wc_route in wheelchair_result['vehicle_routes']:
                                         if wc_route['stops']:
-                                            st.markdown(f"**Van {wc_route['vehicle_id'] + 1}:**")
-                                            duration_text = format_duration(wc_route.get('duration', 0)) if 'duration' in wc_route else "—"
-                                            st.write(f" Estimated time: {duration_text}")
+                                            with st.container():
+                                                st.markdown(f"**Van {wc_route['vehicle_id'] + 1}**")
+                                                duration_text = format_duration(wc_route.get('duration', 0)) if 'duration' in wc_route else "—"
 
-                                            if wheelchair_van_regular_passenger:
-                                                st.info(f"This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")
+                                                if wheelchair_van_regular_passenger:
+                                                    st.info(f"This route includes 1 regular passenger ({wheelchair_van_regular_passenger}) along with wheelchair passengers")
 
-                                            # Aggregate passengers by address in route order for wheelchair van
-                                            address_to_names_wc = OrderedDict()
-                                            for stop_idx in wc_route['stops']:
-                                                if 0 <= stop_idx - 1 < len(wheelchair_stops):
-                                                    stop = wheelchair_stops[stop_idx - 1]
-                                                    addr = stop.address
-                                                    if addr not in address_to_names_wc:
-                                                        address_to_names_wc[addr] = []
-                                                    address_to_names_wc[addr].extend(stop.passengers)
+                                                # Aggregate passengers by address in route order for wheelchair van
+                                                address_to_names_wc = OrderedDict()
+                                                for stop_idx in wc_route['stops']:
+                                                    if 0 <= stop_idx - 1 < len(wheelchair_stops):
+                                                        stop = wheelchair_stops[stop_idx - 1]
+                                                        addr = stop.address
+                                                        if addr not in address_to_names_wc:
+                                                            address_to_names_wc[addr] = []
+                                                        address_to_names_wc[addr].extend(stop.passengers)
 
-                                            # Render grouped stops
-                                            stop_counter_wc = 1
-                                            for addr, names in address_to_names_wc.items():
-                                                st.write(f"Stop {stop_counter_wc} | {addr}")
-                                                for passenger_name in names:
-                                                    st.write(f"{passenger_name}")
-                                                st.write("")  # space between stops
-                                                stop_counter_wc += 1
+                                                # Header meta: time + stop count
+                                                st.caption(f"⏱️ Estimated time: {duration_text} • {len(address_to_names_wc)} stops")
+
+                                                # Render grouped stops
+                                                stop_counter_wc = 1
+                                                for addr, names in address_to_names_wc.items():
+                                                    st.markdown(f"**Stop {stop_counter_wc} | {addr}**")
+                                                    for passenger_name in names:
+                                                        st.write(f"{passenger_name}")
+                                                    st.divider()
+                                                    stop_counter_wc += 1
 
                                             st.write("")  # space between wheelchair vans
                                 else:
