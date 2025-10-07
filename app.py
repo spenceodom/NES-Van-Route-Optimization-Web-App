@@ -144,6 +144,32 @@ def main():
                 st.success(" API key configured")
 
     st.header("Step 1: Upload Master List")
+    # Card/grid CSS (lightweight, Tailwind-inspired)
+    st.markdown(
+        """
+        <style>
+        .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        @media (min-width: 900px) { .routes-grid { grid-template-columns: 1fr 1fr; } }
+        @media (min-width: 1300px) { .routes-grid { grid-template-columns: 1fr 1fr 1fr; } }
+        .card { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06); }
+        .card-body { padding: 16px; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; }
+        .card-title { font-weight: 700; font-size: 20px; color: #111827; }
+        .pill { background: #EEF2FF; color: #4338CA; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 9999px; }
+        .meta { display:flex; align-items:center; color:#6B7280; font-size: 14px; margin-top: 6px; }
+        .meta .clock { width: 18px; height: 18px; margin-right: 6px; }
+        .stop { padding-top: 16px; border-top: 1px solid #F3F4F6; }
+        .stop:first-child { padding-top: 0; border-top: none; }
+        .stop-row { display:flex; align-items:flex-start; }
+        .stop-num { background:#E5E7EB; color:#374151; width:32px; height:32px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
+        .stop-content { margin-left: 12px; }
+        .stop-address { font-weight:600; color:#1F2937; }
+        .passenger { color:#4B5563; margin-top: 4px; }
+        .van-section-title { font-weight: 800; font-size: 22px; margin: 8px 0; }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
     master_file = st.file_uploader(
         "Upload Master List CSV (name, address, wheelchair)",
         type=['csv'],
@@ -313,11 +339,13 @@ def main():
                                 if not regular_result['is_feasible']:
                                     st.error(" Could not find feasible routes for regular passengers")
                                 else:
-                                    # Display optimized routes
+                                    # Display optimized routes as card grid
                                     total_distance = 0
                                     total_duration = 0
+                                    st.markdown('<div class="routes-grid">', unsafe_allow_html=True)
                                     for route in regular_result['vehicle_routes']:
                                         if route['stops']:  # Only show routes with stops
+                                            st.markdown('<div class="card"><div class="card-body">', unsafe_allow_html=True)
                                             with st.container():
                                                 st.markdown(f"**Van {route['vehicle_id'] + 1}**")
                                                 duration_text = format_duration(route.get('duration', 0)) if 'duration' in route else "—"
@@ -332,23 +360,38 @@ def main():
                                                             address_to_names[addr] = []
                                                         address_to_names[addr].extend(stop.passengers)
 
-                                                # Header meta: time + stop count
-                                                st.caption(f"⏱️ Estimated time: {duration_text} • {len(address_to_names)} stops")
+                                                # Header section with meta
+                                                st.markdown(
+                                                    f"<div class='card-header'><div class='card-title'>Van {route['vehicle_id'] + 1}</div>"
+                                                    f"<span class='pill'>{len(address_to_names)} Stops</span></div>",
+                                                    unsafe_allow_html=True
+                                                )
+                                                st.markdown(
+                                                    f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg>"
+                                                    f"<span>Estimated time: {duration_text}</span></div>",
+                                                    unsafe_allow_html=True
+                                                )
 
                                                 # Render grouped stops as sections
                                                 stop_counter = 1
                                                 for addr, names in address_to_names.items():
-                                                    st.markdown(f"**Stop {stop_counter} | {addr}**")
+                                                    st.markdown("<div class='stop'>", unsafe_allow_html=True)
+                                                    st.markdown(
+                                                        f"<div class='stop-row'><div class='stop-num'>{stop_counter}</div>"
+                                                        f"<div class='stop-content'><div class='stop-address'>Stop {stop_counter} | {addr}</div>",
+                                                        unsafe_allow_html=True
+                                                    )
                                                     for passenger_name in names:
-                                                        st.write(f"{passenger_name}")
-                                                    st.divider()
+                                                        st.markdown(f"<div class='passenger'>{passenger_name}</div>", unsafe_allow_html=True)
+                                                    st.markdown("</div></div></div>", unsafe_allow_html=True)
                                                     stop_counter += 1
 
                                             total_distance += route['distance']
                                             if 'duration' in route:
                                                 total_duration += route['duration']
+                                            st.markdown('</div></div>', unsafe_allow_html=True)
 
-                                    st.write("")  # space between vans
+                                    st.markdown('</div>', unsafe_allow_html=True)
 
                                     # No overall totals per requirements
 
@@ -370,8 +413,10 @@ def main():
                                         st.warning(f"Wheelchair geocoding error: {error}")
 
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
+                                    st.markdown('<div class="routes-grid">', unsafe_allow_html=True)
                                     for wc_route in wheelchair_result['vehicle_routes']:
                                         if wc_route['stops']:
+                                            st.markdown('<div class="card"><div class="card-body">', unsafe_allow_html=True)
                                             with st.container():
                                                 st.markdown(f"**Van {wc_route['vehicle_id'] + 1}**")
                                                 duration_text = format_duration(wc_route.get('duration', 0)) if 'duration' in wc_route else "—"
@@ -389,19 +434,34 @@ def main():
                                                             address_to_names_wc[addr] = []
                                                         address_to_names_wc[addr].extend(stop.passengers)
 
-                                                # Header meta: time + stop count
-                                                st.caption(f"⏱️ Estimated time: {duration_text} • {len(address_to_names_wc)} stops")
+                                                # Header section with meta
+                                                st.markdown(
+                                                    f"<div class='card-header'><div class='card-title'>Van {wc_route['vehicle_id'] + 1}</div>"
+                                                    f"<span class='pill'>{len(address_to_names_wc)} Stops</span></div>",
+                                                    unsafe_allow_html=True
+                                                )
+                                                st.markdown(
+                                                    f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg>"
+                                                    f"<span>Estimated time: {duration_text}</span></div>",
+                                                    unsafe_allow_html=True
+                                                )
 
                                                 # Render grouped stops
                                                 stop_counter_wc = 1
                                                 for addr, names in address_to_names_wc.items():
-                                                    st.markdown(f"**Stop {stop_counter_wc} | {addr}**")
+                                                    st.markdown("<div class='stop'>", unsafe_allow_html=True)
+                                                    st.markdown(
+                                                        f"<div class='stop-row'><div class='stop-num'>{stop_counter_wc}</div>"
+                                                        f"<div class='stop-content'><div class='stop-address'>Stop {stop_counter_wc} | {addr}</div>",
+                                                        unsafe_allow_html=True
+                                                    )
                                                     for passenger_name in names:
-                                                        st.write(f"{passenger_name}")
-                                                    st.divider()
+                                                        st.markdown(f"<div class='passenger'>{passenger_name}</div>", unsafe_allow_html=True)
+                                                    st.markdown("</div></div></div>", unsafe_allow_html=True)
                                                     stop_counter_wc += 1
 
-                                            st.write("")  # space between wheelchair vans
+                                            st.markdown('</div></div>', unsafe_allow_html=True)
+                                    st.markdown('</div>', unsafe_allow_html=True)
                                 else:
                                     st.write("No wheelchair passengers selected.")
                             else:
