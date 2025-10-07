@@ -313,6 +313,20 @@ class RouteOptimizer:
             transit_callback_index = routing.RegisterTransitCallback(duration_cost_callback)
             routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
+            # Add a time dimension to balance per-van route duration (minimize max route time)
+            try:
+                routing.AddDimension(
+                    transit_callback_index,
+                    0,           # no waiting/slack
+                    10**7,       # large upper bound on per-vehicle time
+                    True,        # start cumul to zero
+                    'Time'
+                )
+                time_dimension = routing.GetDimensionOrDie('Time')
+                time_dimension.SetGlobalSpanCostCoefficient(100)
+            except Exception as e:
+                logger.warning(f"Failed to add time dimension for balancing: {e}")
+
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
             search_parameters.first_solution_strategy = (
                 routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
@@ -419,7 +433,9 @@ class RouteOptimizer:
 
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
             search_parameters.first_solution_strategy = (
-                routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+                routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION)
+            search_parameters.local_search_metaheuristic = (
+                routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
             search_parameters.time_limit.seconds = 15
 
             solution = routing.SolveWithParameters(search_parameters)
