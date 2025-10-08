@@ -2,10 +2,18 @@ import streamlit as st
 import os
 import math
 from collections import OrderedDict
+import copy
 import pandas as pd
 from datetime import time
 from src.models.route_models import StopModel
 from src.optimization.route_optimizer import RouteOptimizer
+
+# Optional drag-and-drop support
+try:
+    from streamlit_sortables import sort_items  # type: ignore
+    HAS_SORTABLES = True
+except Exception:
+    HAS_SORTABLES = False
 
 st.set_page_config(
     page_title="NES Van Route Optimizer",
@@ -348,6 +356,7 @@ def main():
                                     total_distance = 0
                                     total_duration = 0
                                     regular_cards: list[str] = []
+                                    regular_assignments_built: list[dict] = []
                                     for route in regular_result['vehicle_routes']:
                                         if not route['stops']:
                                             continue
@@ -388,6 +397,12 @@ def main():
                                         )
 
                                         regular_cards.append(card_html)
+                                        # Build assignment structure for manual edit mode
+                                        regular_assignments_built.append({
+                                            'vehicle_id': route['vehicle_id'],
+                                            'address_order': list(address_to_names.keys()),
+                                            'addr_to_passengers': {a: list(p) for a, p in address_to_names.items()},
+                                        })
                                         total_distance += route['distance']
                                         if 'duration' in route:
                                             total_duration += route['duration']
@@ -395,6 +410,19 @@ def main():
                                     if regular_cards:
                                         grid_html = "<div class='routes-grid'>" + "".join(regular_cards) + "</div>"
                                         st.markdown(grid_html, unsafe_allow_html=True)
+
+                                    # Initialize session state mappings and assignments for manual edit mode
+                                    if 'name_to_info' not in st.session_state:
+                                        st.session_state['name_to_info'] = {
+                                            row['name']: {
+                                                'address': row['address'],
+                                                'is_wheelchair': bool(row['is_wheelchair'])
+                                            }
+                                            for _, row in selected_df.iterrows()
+                                        }
+                                    if 'regular_vans_assignments' not in st.session_state:
+                                        st.session_state['regular_vans_assignments'] = regular_assignments_built
+                                        st.session_state['original_regular_vans_assignments'] = copy.deepcopy(regular_assignments_built)
 
                                     # No overall totals per requirements
 
@@ -417,6 +445,7 @@ def main():
 
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
                                     wc_cards: list[str] = []
+                                    wheelchair_assignments_built: list[dict] = []
                                     for wc_route in wheelchair_result['vehicle_routes']:
                                         if not wc_route['stops']:
                                             continue
@@ -455,10 +484,19 @@ def main():
                                             "</div></div>"
                                         )
                                         wc_cards.append(wc_card_html)
+                                        # Build assignment structure for manual edit mode
+                                        wheelchair_assignments_built.append({
+                                            'vehicle_id': wc_route['vehicle_id'],
+                                            'address_order': list(address_to_names_wc.keys()),
+                                            'addr_to_passengers': {a: list(p) for a, p in address_to_names_wc.items()},
+                                        })
 
                                     if wc_cards:
                                         wc_grid_html = "<div class='routes-grid'>" + "".join(wc_cards) + "</div>"
                                         st.markdown(wc_grid_html, unsafe_allow_html=True)
+                                    if 'wheelchair_vans_assignments' not in st.session_state:
+                                        st.session_state['wheelchair_vans_assignments'] = wheelchair_assignments_built
+                                        st.session_state['original_wheelchair_vans_assignments'] = copy.deepcopy(wheelchair_assignments_built)
                                 else:
                                     st.write("No wheelchair passengers selected.")
                             else:
@@ -473,6 +511,210 @@ def main():
                         except Exception as e:
                             st.error(f" Optimization failed: {str(e)}")
                             st.info(" Make sure your Google Maps API key is valid and has the required permissions")
+                            if debug:
+                                import traceback
+                                st.text(traceback.format_exc())
+
+                        # Manual Edit Mode UI
+                        try:
+                            st.divider()
+                            st.subheader("Manual Edit Mode (Optional)")
+                            edit_mode = st.checkbox("Enable manual reordering and reassignment", value=False, key="manual_edit_mode")
+                            if edit_mode:
+                                # Reset control
+                                col_reset, _ = st.columns([1, 3])
+                                if col_reset.button("Reset to optimized"):
+                                    if 'original_regular_vans_assignments' in st.session_state:
+                                        st.session_state['regular_vans_assignments'] = copy.deepcopy(st.session_state['original_regular_vans_assignments'])
+                                    if 'original_wheelchair_vans_assignments' in st.session_state:
+                                        st.session_state['wheelchair_vans_assignments'] = copy.deepcopy(st.session_state['original_wheelchair_vans_assignments'])
+                                    st.success("Restored optimized plan.")
+
+                                name_to_info = st.session_state.get('name_to_info', {})
+
+                                # Helpers
+                                def render_cards_from_assignments(section_title: str, assignments: list[dict], is_wheelchair_section: bool):
+                                    st.markdown(f"**{section_title}**")
+                                    # Recompute metrics and render cards
+                                    cards: list[str] = []
+                                    total_distance_local = 0
+                                    total_duration_local = 0
+                                    for van in assignments:
+                                        addr_to_pass = van['addr_to_passengers']
+                                        address_order = van['address_order']
+                                        stops_seq = [
+                                            StopModel(address=a, passengers=list(addr_to_pass.get(a, [])), wheelchair=is_wheelchair_section)
+                                            for a in address_order if a in addr_to_pass and addr_to_pass[a]
+                                        ]
+                                        # Compute metrics for this van only
+                                        metrics_optimizer = RouteOptimizer(depot_address, MAX_VAN_CAPACITY, api_key)
+                                        metrics = metrics_optimizer.compute_metrics_for_sequence(stops_seq)
+                                        duration_text_local = format_duration(metrics.get('duration', 0)) if metrics.get('is_feasible', False) else "—"
+                                        # Build HTML same as above
+                                        stops_html_parts_local: list[str] = []
+                                        stop_counter_local = 1
+                                        for addr in address_order:
+                                            names_here = addr_to_pass.get(addr, [])
+                                            if not names_here:
+                                                continue
+                                            passengers_html_local = "".join([f"<div class='passenger'>{p}</div>" for p in names_here])
+                                            stops_html_parts_local.append(
+                                                f"<div class='stop'>"
+                                                f"<div class='stop-row'>"
+                                                f"<div class='stop-num'>{stop_counter_local}</div>"
+                                                f"<div class='stop-content'><div class='stop-address'>Stop {stop_counter_local} | {addr}</div>{passengers_html_local}</div>"
+                                                f"</div>"
+                                                f"</div>"
+                                            )
+                                            stop_counter_local += 1
+
+                                        color_classes_local = ["title-blue", "title-green", "title-red", "title-purple", "title-amber"]
+                                        title_class_local = color_classes_local[(van.get('vehicle_id', 0)) % len(color_classes_local)]
+                                        card_html_local = (
+                                            "<div class='card'><div class='card-body'>"
+                                            f"<div class='card-header'><div class='card-title {title_class_local}'>Van {van.get('vehicle_id', 0) + 1}</div><span class='pill'>{len([a for a in address_order if addr_to_pass.get(a)])} Stops</span></div>"
+                                            f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg><span>Estimated time: {duration_text_local}</span></div>"
+                                            + "".join(stops_html_parts_local) +
+                                            "</div></div>"
+                                        )
+                                        cards.append(card_html_local)
+                                        total_distance_local += metrics.get('distance', 0)
+                                        total_duration_local += metrics.get('duration', 0)
+
+                                    if cards:
+                                        grid_html_local = "<div class='routes-grid'>" + "".join(cards) + "</div>"
+                                        st.markdown(grid_html_local, unsafe_allow_html=True)
+
+                                # Passenger reassignment controls (fallback if drag between vans not available)
+                                with st.expander("Reassign passengers between vans"):
+                                    # Build current lists
+                                    regular_vans = st.session_state.get('regular_vans_assignments', [])
+                                    wheelchair_vans = st.session_state.get('wheelchair_vans_assignments', [])
+                                    all_regular_passengers = []
+                                    for v in regular_vans:
+                                        for addr, names in v['addr_to_passengers'].items():
+                                            all_regular_passengers.extend(names)
+                                    all_wheelchair_passengers = []
+                                    for v in wheelchair_vans:
+                                        for addr, names in v['addr_to_passengers'].items():
+                                            all_wheelchair_passengers.extend(names)
+
+                                    # Select a passenger and a destination van type/index
+                                    move_passenger = st.selectbox("Select passenger to move", options=sorted(all_regular_passengers + all_wheelchair_passengers))
+                                    target_section = st.selectbox("Move to section", options=["Regular Vans", "Wheelchair Vans"])
+                                    if target_section == "Regular Vans":
+                                        target_van_idx = st.number_input("Target Regular Van # (1-based)", min_value=1, max_value=max(1, len(regular_vans) or 1), value=1, step=1) - 1
+                                    else:
+                                        target_van_idx = st.number_input("Target Wheelchair Van # (1-based)", min_value=1, max_value=max(1, len(wheelchair_vans) or 1), value=1, step=1) - 1
+
+                                    if st.button("Move passenger"):
+                                        # Find current location
+                                        def remove_from_vans(vans_list: list[dict], passenger: str) -> tuple[bool, str]:
+                                            removed = False
+                                            prev_section = ""
+                                            for idx_v, van in enumerate(vans_list):
+                                                for addr in list(van['addr_to_passengers'].keys()):
+                                                    names_here = van['addr_to_passengers'][addr]
+                                                    if passenger in names_here:
+                                                        names_here.remove(passenger)
+                                                        removed = True
+                                                        prev_section = f"van_{idx_v}"
+                                                        # Clean empty address bucket
+                                                        if not names_here:
+                                                            van['addr_to_passengers'].pop(addr, None)
+                                                            if addr in van['address_order']:
+                                                                van['address_order'] = [a for a in van['address_order'] if a != addr]
+                                                        break
+                                                if removed:
+                                                    break
+                                            return removed, prev_section
+
+                                        # Remove from whichever section currently contains the passenger
+                                        was_removed, _ = remove_from_vans(regular_vans, move_passenger)
+                                        if not was_removed:
+                                            was_removed, _ = remove_from_vans(wheelchair_vans, move_passenger)
+
+                                        # Determine passenger address and wheelchair flag
+                                        info = name_to_info.get(move_passenger, {"address": None, "is_wheelchair": False})
+                                        p_addr = info.get("address")
+                                        p_is_wheelchair = bool(info.get("is_wheelchair", False))
+
+                                        if target_section == "Regular Vans":
+                                            # Capacity check: total passengers after add must be <= MAX_VAN_CAPACITY
+                                            van = regular_vans[target_van_idx] if 0 <= target_van_idx < len(regular_vans) else None
+                                            if van is None:
+                                                st.error("Invalid target regular van")
+                                            else:
+                                                # Regular vans should not contain wheelchair passengers
+                                                if p_is_wheelchair:
+                                                    st.error("Cannot move a wheelchair passenger into a regular van.")
+                                                else:
+                                                    current_load = sum(len(n) for n in van['addr_to_passengers'].values())
+                                                    if current_load + 1 > MAX_VAN_CAPACITY:
+                                                        st.error(f"Capacity exceeded for target van (max {MAX_VAN_CAPACITY}).")
+                                                    else:
+                                                        # Add to appropriate address bucket
+                                                        if p_addr not in van['addr_to_passengers']:
+                                                            van['addr_to_passengers'][p_addr] = []
+                                                            van['address_order'].append(p_addr)
+                                                        van['addr_to_passengers'][p_addr].append(move_passenger)
+                                                        st.success("Passenger moved to regular van.")
+                                        else:
+                                            van = wheelchair_vans[target_van_idx] if 0 <= target_van_idx < len(wheelchair_vans) else None
+                                            if van is None:
+                                                st.error("Invalid target wheelchair van")
+                                            else:
+                                                # Wheelchair van rule: at most 1 regular passenger
+                                                regular_in_van = 0
+                                                for names in van['addr_to_passengers'].values():
+                                                    for nm in names:
+                                                        if not name_to_info.get(nm, {}).get('is_wheelchair', False):
+                                                            regular_in_van += 1
+                                                if not p_is_wheelchair and regular_in_van >= 1:
+                                                    st.error("Wheelchair van can carry at most 1 regular passenger.")
+                                                else:
+                                                    if p_addr not in van['addr_to_passengers']:
+                                                        van['addr_to_passengers'][p_addr] = []
+                                                        van['address_order'].append(p_addr)
+                                                    van['addr_to_passengers'][p_addr].append(move_passenger)
+                                                    st.success("Passenger moved to wheelchair van.")
+
+                                # Stop order reordering per van (drag-enabled if available)
+                                st.markdown("**Reorder stops within each van**")
+                                if not HAS_SORTABLES:
+                                    st.info("Install 'streamlit-sortables' to enable drag-and-drop stop reordering. Showing current order only.")
+
+                                # Regular vans stop order
+                                for idx_v, van in enumerate(st.session_state.get('regular_vans_assignments', [])):
+                                    st.markdown(f"Van {idx_v + 1} (Regular)")
+                                    current_order = van['address_order']
+                                    if HAS_SORTABLES:
+                                        new_order = sort_items(current_order, key=f"reg_addr_order_{idx_v}")
+                                        if new_order and new_order != current_order:
+                                            # Keep only addresses that still exist
+                                            van['address_order'] = [a for a in new_order if a in van['addr_to_passengers']]
+                                    else:
+                                        st.write(current_order)
+
+                                # Wheelchair vans stop order
+                                for idx_v, van in enumerate(st.session_state.get('wheelchair_vans_assignments', [])):
+                                    st.markdown(f"Van {idx_v + 1} (Wheelchair)")
+                                    current_order = van['address_order']
+                                    if HAS_SORTABLES:
+                                        new_order = sort_items(current_order, key=f"wc_addr_order_{idx_v}")
+                                        if new_order and new_order != current_order:
+                                            van['address_order'] = [a for a in new_order if a in van['addr_to_passengers']]
+                                    else:
+                                        st.write(current_order)
+
+                                st.divider()
+                                # Render updated cards with recomputed metrics
+                                if st.session_state.get('regular_vans_assignments'):
+                                    render_cards_from_assignments("Regular Van Routes (Manual Plan)", st.session_state['regular_vans_assignments'], is_wheelchair_section=False)
+                                if st.session_state.get('wheelchair_vans_assignments'):
+                                    render_cards_from_assignments("Wheelchair Van Routes (Manual Plan)", st.session_state['wheelchair_vans_assignments'], is_wheelchair_section=True)
+
+                        except Exception as e:
                             if debug:
                                 import traceback
                                 st.text(traceback.format_exc())

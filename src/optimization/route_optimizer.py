@@ -297,6 +297,114 @@ class RouteOptimizer:
 
         return depot_coords, stop_coords, geocoding_errors
 
+    def compute_metrics_for_sequence(self, ordered_stops: List[StopModel]) -> Dict[str, Any]:
+        """
+        Compute total distance and duration for a fixed stop sequence for a single vehicle.
+
+        The route is assumed to start and end at the depot. No optimization is performed;
+        we simply sum metrics along the provided sequence.
+
+        Args:
+            ordered_stops: Stops in the exact order they will be visited.
+
+        Returns:
+            Dict with keys: distance (meters), duration (seconds), is_feasible (bool)
+        """
+        try:
+            if not ordered_stops:
+                return {
+                    'distance': 0,
+                    'duration': 0,
+                    'is_feasible': True
+                }
+
+            # Geocode depot and all stop addresses (in given order)
+            depot_coords, stop_coords, geocoding_errors = self._geocode_all_addresses(
+                [s.address for s in ordered_stops]
+            )
+
+            if not depot_coords:
+                return {
+                    'distance': 0,
+                    'duration': 0,
+                    'is_feasible': False,
+                    'error': 'Could not geocode depot address',
+                    'geocoding_errors': geocoding_errors,
+                }
+
+            # Filter out any stops that failed geocoding but preserve order for metrics
+            valid_index_map: List[int] = []
+            valid_coords: List[Tuple[float, float]] = []
+            for idx, coords in enumerate(stop_coords):
+                if coords is not None:
+                    valid_index_map.append(idx)
+                    valid_coords.append(coords)
+
+            if not valid_coords:
+                return {
+                    'distance': 0,
+                    'duration': 0,
+                    'is_feasible': False,
+                    'error': 'Could not geocode any stops',
+                    'geocoding_errors': geocoding_errors,
+                }
+
+            # Build matrix for [depot] + valid stops in the (filtered) order
+            distance_matrix, duration_matrix = self.gmaps_service.get_route_optimization_matrix(
+                depot_coords, valid_coords
+            )
+
+            # Sum metrics along path: depot -> s1 -> s2 -> ... -> sn -> depot
+            total_distance_m = 0
+            total_duration_s = 0
+
+            # From depot (0) to first stop (1)
+            prev_node = 0
+            for k in range(1, len(valid_coords) + 1):
+                # moving from prev_node to k
+                edge_dist = distance_matrix[prev_node][k]
+                edge_dur = duration_matrix[prev_node][k]
+                if edge_dist is None or edge_dur is None:
+                    # If any leg is unreachable, fail gracefully
+                    return {
+                        'distance': total_distance_m,
+                        'duration': total_duration_s,
+                        'is_feasible': False,
+                        'error': 'One or more legs are unreachable in the provided sequence'
+                    }
+                total_distance_m += int(edge_dist)
+                total_duration_s += int(edge_dur)
+                prev_node = k
+
+            # Return to depot from last stop
+            edge_dist = distance_matrix[prev_node][0]
+            edge_dur = duration_matrix[prev_node][0]
+            if edge_dist is None or edge_dur is None:
+                return {
+                    'distance': total_distance_m,
+                    'duration': total_duration_s,
+                    'is_feasible': False,
+                    'error': 'Return to depot is unreachable from last stop'
+                }
+            total_distance_m += int(edge_dist)
+            total_duration_s += int(edge_dur)
+
+            return {
+                'distance': total_distance_m,
+                'duration': total_duration_s,
+                'is_feasible': True,
+                'geocoding_errors': geocoding_errors,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to compute metrics for sequence: {e}")
+            return {
+                'distance': 0,
+                'duration': 0,
+                'is_feasible': False,
+                'error': str(e)
+            }
+
     def _optimize_single_vehicle(
         self,
         distance_matrix: List[List[Optional[int]]],
