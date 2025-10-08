@@ -36,19 +36,9 @@
     <script>
       let __componentId = null;
 
-      function setComponentReady() {
-        window.parent.postMessage({ type: 'streamlit:componentReady', isReady: true }, '*');
-      }
-
-      function setFrameHeight(h) {
-        window.parent.postMessage({ type: 'streamlit:setFrameHeight', height: h }, '*');
-      }
-
-      function sendValue(value) {
-        if (__componentId !== null) {
-          window.parent.postMessage({ type: 'streamlit:componentValue', id: __componentId, value }, '*');
-        }
-      }
+      function setComponentReady() { window.parent.postMessage({ isStreamlitMessage: true, type: 'streamlit:componentReady', isReady: true }, '*'); }
+      function setFrameHeight(h) { window.parent.postMessage({ isStreamlitMessage: true, type: 'streamlit:setFrameHeight', height: h }, '*'); }
+      function sendValue(value) { if (__componentId !== null) { window.parent.postMessage({ isStreamlitMessage: true, type: 'streamlit:componentValue', id: __componentId, value }, '*'); } }
 
       function render(vans) {
         const root = document.getElementById('root');
@@ -95,6 +85,7 @@
           van.stops.forEach((s, idx) => {
             const chip = document.createElement('span');
             chip.className = 'stop-chip';
+            chip.setAttribute('draggable', 'true');
             chip.textContent = s.address;
             chip.dataset.address = s.address;
             stopChipsRow.appendChild(chip);
@@ -122,6 +113,7 @@
             (s.passengers || []).forEach((p) => {
               const pax = document.createElement('div');
               pax.className = 'passenger';
+              pax.setAttribute('draggable', 'true');
               pax.innerHTML = `<span class="handle">⋮⋮</span><span class="passenger-pill">${p}</span>`;
               pax.dataset.passenger = p;
               pax.dataset.address = s.address;
@@ -183,9 +175,15 @@
               e.preventDefault();
               const after = getRowAfterElement(container, e.clientY);
               const dragging = document.querySelector('.passenger.dragging');
-              if (dragging) {
-                if (after == null) container.appendChild(dragging); else container.insertBefore(dragging, after);
-              }
+              if (dragging) { if (after == null) container.appendChild(dragging); else container.insertBefore(dragging, after); }
+            });
+            container.addEventListener('dragstart', (e) => {
+              const row = e.target.closest('.passenger');
+              if (row) row.classList.add('dragging');
+            });
+            container.addEventListener('dragend', (e) => {
+              const row = e.target.closest('.passenger');
+              if (row) row.classList.remove('dragging');
             });
             container.addEventListener('drop', (e) => {
               e.preventDefault();
