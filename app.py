@@ -341,7 +341,6 @@ def main():
 
                             # Optimize regular routes
                             if regular_stops:
-                                st.subheader("Regular Van Routes")
                                 regular_result = optimizer_regular.optimize_route(regular_stops, start_time, number_of_vans)
 
                                 if regular_result['geocoding_errors']:
@@ -408,10 +407,11 @@ def main():
                                             total_duration += route['duration']
 
                                     if regular_cards:
+                                        st.subheader("Regular Van Routes")
                                         grid_html = "<div class='routes-grid'>" + "".join(regular_cards) + "</div>"
                                         st.markdown(grid_html, unsafe_allow_html=True)
 
-                                    # Initialize session state mappings and assignments for manual edit mode
+                                    # Initialize/overwrite session state mappings and assignments for manual edit mode
                                     if 'name_to_info' not in st.session_state:
                                         st.session_state['name_to_info'] = {
                                             row['name']: {
@@ -420,15 +420,14 @@ def main():
                                             }
                                             for _, row in selected_df.iterrows()
                                         }
-                                    if 'regular_vans_assignments' not in st.session_state:
-                                        st.session_state['regular_vans_assignments'] = regular_assignments_built
-                                        st.session_state['original_regular_vans_assignments'] = copy.deepcopy(regular_assignments_built)
+                                    # Always update to latest optimized result
+                                    st.session_state['regular_vans_assignments'] = regular_assignments_built
+                                    st.session_state['original_regular_vans_assignments'] = copy.deepcopy(regular_assignments_built)
 
                                     # No overall totals per requirements
 
                             # Handle wheelchair routes (separate optimization)
                             if wheelchair_stops:
-                                st.subheader("Wheelchair Van Routes")
                                 # For wheelchair vans, allow all wheelchair passengers plus at most 1 regular passenger per van
                                 wc_capacity = sum(len(s.passengers) for s in wheelchair_stops)
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
@@ -492,11 +491,12 @@ def main():
                                         })
 
                                     if wc_cards:
+                                        st.subheader("Wheelchair Van Routes")
                                         wc_grid_html = "<div class='routes-grid'>" + "".join(wc_cards) + "</div>"
                                         st.markdown(wc_grid_html, unsafe_allow_html=True)
-                                    if 'wheelchair_vans_assignments' not in st.session_state:
-                                        st.session_state['wheelchair_vans_assignments'] = wheelchair_assignments_built
-                                        st.session_state['original_wheelchair_vans_assignments'] = copy.deepcopy(wheelchair_assignments_built)
+                                    # Always update to latest optimized result
+                                    st.session_state['wheelchair_vans_assignments'] = wheelchair_assignments_built
+                                    st.session_state['original_wheelchair_vans_assignments'] = copy.deepcopy(wheelchair_assignments_built)
                                 else:
                                     st.write("No wheelchair passengers selected.")
                             else:
