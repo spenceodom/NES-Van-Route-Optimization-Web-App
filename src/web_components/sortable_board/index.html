@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sortable Board</title>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
-    <script src="https://unpkg.com/streamlit-component-lib@1.4.0/dist/streamlit-component-lib.js"></script>
     <style>
       body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
       .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
@@ -36,6 +35,22 @@
     <div id="root"></div>
 
     <script>
+      let __componentId = null;
+
+      function setComponentReady() {
+        window.parent.postMessage({ type: 'streamlit:componentReady', isReady: true }, '*');
+      }
+
+      function setFrameHeight(h) {
+        window.parent.postMessage({ type: 'streamlit:setFrameHeight', height: h }, '*');
+      }
+
+      function sendValue(value) {
+        if (__componentId !== null) {
+          window.parent.postMessage({ type: 'streamlit:componentValue', id: __componentId, value }, '*');
+        }
+      }
+
       function render(vans) {
         const root = document.getElementById('root');
         root.innerHTML = '';
@@ -130,7 +145,7 @@
             chosenClass: 'chosen',
             onEnd: () => {
               const newOrder = Array.from(stopChipsRow.querySelectorAll('.stop-chip')).map(el => el.dataset.address);
-              Streamlit.setComponentValue({
+              sendValue({
                 type: 'reorder_stops',
                 section: van.section,
                 vehicle_id: van.vehicle_id,
@@ -158,7 +173,7 @@
                 const fromVehicleId = fromCard ? parseInt(fromCard.dataset.vehicleId) : null;
                 if (!toAddress) {
                   const insertIndex = Array.from(container.parentElement.querySelectorAll('.drag-container')).indexOf(container);
-                  Streamlit.setComponentValue({
+                  sendValue({
                     type: 'create_stop_from_passenger',
                     to_section: toSection,
                     to_vehicle_id: toVehicleId,
@@ -166,7 +181,7 @@
                     passenger: passenger,
                   });
                 } else {
-                  Streamlit.setComponentValue({
+                  sendValue({
                     type: 'move_passenger',
                     from_section: fromSection,
                     to_section: toSection,
@@ -182,7 +197,7 @@
                 const address = container.dataset.address;
                 if (!address) return;
                 const newOrder = Array.from(container.children).map(el => el.dataset.passenger).filter(Boolean);
-                Streamlit.setComponentValue({
+                sendValue({
                   type: 'reorder_passengers',
                   section: van.section,
                   vehicle_id: van.vehicle_id,
@@ -195,18 +210,20 @@
         });
 
         root.appendChild(grid);
-        Streamlit.setFrameHeight(document.body.scrollHeight);
+        setFrameHeight(document.body.scrollHeight);
       }
 
-      function onRender(event) {
-        const data = event.detail;
-        const args = data?.args || {};
+      function onDataFromStreamlit(event) {
+        const msg = event.data;
+        if (!msg || msg.type !== 'streamlit:render') return;
+        __componentId = msg.id;
+        const args = msg.args || {};
         render(args.vans || []);
       }
 
-      Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
-      Streamlit.setComponentReady();
-      Streamlit.setFrameHeight(100);
+      window.addEventListener('message', onDataFromStreamlit);
+      setComponentReady();
+      setFrameHeight(80);
     </script>
   </body>
   </html>
