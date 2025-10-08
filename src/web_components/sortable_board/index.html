@@ -4,7 +4,6 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sortable Board</title>
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <style>
       body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
       .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
@@ -137,80 +136,133 @@
           card.appendChild(body);
           grid.appendChild(card);
 
-          // Sortable for stop chips to reorder stops
-          new Sortable(stopChipsRow, {
-            group: `stops-${van.section}-${van.vehicle_id}`,
-            animation: 150,
-            ghostClass: 'ghost',
-            chosenClass: 'chosen',
-            onEnd: () => {
-              const newOrder = Array.from(stopChipsRow.querySelectorAll('.stop-chip')).map(el => el.dataset.address);
-              sendValue({
-                type: 'reorder_stops',
-                section: van.section,
-                vehicle_id: van.vehicle_id,
-                new_order: newOrder,
-              });
+          // Native DnD for stop chips (reorder within a van)
+          let chipDragEl = null;
+          stopChipsRow.addEventListener('dragstart', (e) => {
+            const target = e.target.closest('.stop-chip');
+            if (!target) return;
+            chipDragEl = target;
+            e.dataTransfer.effectAllowed = 'move';
+          });
+          stopChipsRow.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const after = getChipAfterElement(stopChipsRow, e.clientX);
+            if (after == null) {
+              stopChipsRow.appendChild(chipDragEl);
+            } else {
+              stopChipsRow.insertBefore(chipDragEl, after);
             }
           });
+          stopChipsRow.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const newOrder = Array.from(stopChipsRow.querySelectorAll('.stop-chip')).map(el => el.dataset.address);
+            sendValue({
+              type: 'reorder_stops',
+              section: van.section,
+              vehicle_id: van.vehicle_id,
+              new_order: newOrder,
+            });
+          });
 
-          // Sortable for passengers per stop and across vans
-          Array.from(stopsContainer.querySelectorAll('.drag-container')).forEach((container, idx) => {
-            new Sortable(container, {
-              group: 'passengers-global',
-              handle: '.handle',
-              animation: 150,
-              ghostClass: 'ghost',
-              chosenClass: 'chosen',
-              onAdd: (evt) => {
-                const passenger = evt.item.dataset.passenger;
-                const toAddress = container.dataset.address;
-                const toSection = van.section;
-                const toVehicleId = van.vehicle_id;
-                const fromAddress = evt.from.dataset.address || null;
-                const fromCard = evt.from.closest('.card');
-                const fromSection = fromCard ? fromCard.dataset.section : null;
-                const fromVehicleId = fromCard ? parseInt(fromCard.dataset.vehicleId) : null;
-                if (!toAddress) {
-                  const insertIndex = Array.from(container.parentElement.querySelectorAll('.drag-container')).indexOf(container);
-                  sendValue({
-                    type: 'create_stop_from_passenger',
-                    to_section: toSection,
-                    to_vehicle_id: toVehicleId,
-                    insert_index: insertIndex,
-                    passenger: passenger,
-                  });
-                } else {
-                  sendValue({
-                    type: 'move_passenger',
-                    from_section: fromSection,
-                    to_section: toSection,
-                    from_vehicle_id: fromVehicleId,
-                    to_vehicle_id: toVehicleId,
-                    from_address: fromAddress,
-                    to_address: toAddress,
-                    passenger: passenger,
-                  });
-                }
-              },
-              onUpdate: (evt) => {
-                const address = container.dataset.address;
-                if (!address) return;
-                const newOrder = Array.from(container.children).map(el => el.dataset.passenger).filter(Boolean);
-                sendValue({
-                  type: 'reorder_passengers',
-                  section: van.section,
-                  vehicle_id: van.vehicle_id,
-                  address: address,
-                  new_order: newOrder,
-                });
+          // Native DnD for passengers (within/between vans)
+          const paxContainers = Array.from(stopsContainer.querySelectorAll('.drag-container'));
+          paxContainers.forEach((container) => {
+            container.addEventListener('dragstart', (e) => {
+              const row = e.target.closest('.passenger');
+              if (!row) return;
+              e.dataTransfer.setData('text/plain', JSON.stringify({
+                type: 'passenger',
+                passenger: row.dataset.passenger,
+                fromAddress: row.dataset.address,
+                fromSection: van.section,
+                fromVehicleId: van.vehicle_id,
+              }));
+              e.dataTransfer.effectAllowed = 'move';
+            });
+            container.addEventListener('dragover', (e) => {
+              e.preventDefault();
+              const after = getRowAfterElement(container, e.clientY);
+              const dragging = document.querySelector('.passenger.dragging');
+              if (dragging) {
+                if (after == null) container.appendChild(dragging); else container.insertBefore(dragging, after);
               }
+            });
+            container.addEventListener('drop', (e) => {
+              e.preventDefault();
+              const data = safeParse(e.dataTransfer.getData('text/plain'));
+              if (!data || data.type !== 'passenger') return;
+              const toAddress = container.dataset.address;
+              const toSection = van.section;
+              const toVehicleId = van.vehicle_id;
+              if (!toAddress) return; // only drop into real stop containers
+              sendValue({
+                type: 'move_passenger',
+                from_section: data.fromSection,
+                to_section: toSection,
+                from_vehicle_id: data.fromVehicleId,
+                to_vehicle_id: toVehicleId,
+                from_address: data.fromAddress,
+                to_address: toAddress,
+                passenger: data.passenger,
+              });
+              // Also emit reorder of this container after DOM change
+              const newOrder = Array.from(container.children).map(el => el.dataset.passenger).filter(Boolean);
+              sendValue({
+                type: 'reorder_passengers',
+                section: toSection,
+                vehicle_id: toVehicleId,
+                address: toAddress,
+                new_order: newOrder,
+              });
+            });
+          });
+
+          // Allow passenger drop on chip row to create stop at position
+          stopChipsRow.addEventListener('dragover', (e) => { e.preventDefault(); });
+          stopChipsRow.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const data = safeParse(e.dataTransfer.getData('text/plain'));
+            if (!data || data.type !== 'passenger') return;
+            const insertIndex = getChipInsertIndex(stopChipsRow, e.clientX);
+            sendValue({
+              type: 'create_stop_from_passenger',
+              to_section: van.section,
+              to_vehicle_id: van.vehicle_id,
+              insert_index: insertIndex,
+              passenger: data.passenger,
             });
           });
         });
 
         root.appendChild(grid);
         setFrameHeight(document.body.scrollHeight);
+      }
+
+      function safeParse(s) { try { return JSON.parse(s); } catch { return null; } }
+      function getRowAfterElement(container, y) {
+        const els = [...container.querySelectorAll('.passenger:not(.dragging)')];
+        return els.reduce((closest, child) => {
+          const box = child.getBoundingClientRect();
+          const offset = y - box.top - box.height / 2;
+          if (offset < 0 && offset > closest.offset) { return { offset, element: child }; } else { return closest; }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+      }
+      function getChipAfterElement(container, x) {
+        const els = [...container.querySelectorAll('.stop-chip')];
+        let after = null;
+        for (const el of els) {
+          const box = el.getBoundingClientRect();
+          if (x < box.left + box.width / 2) { after = el; break; }
+        }
+        return after;
+      }
+      function getChipInsertIndex(container, x) {
+        const chips = [...container.querySelectorAll('.stop-chip')];
+        for (let i=0;i<chips.length;i++) {
+          const box = chips[i].getBoundingClientRect();
+          if (x < box.left + box.width / 2) return i;
+        }
+        return chips.length;
       }
 
       function onDataFromStreamlit(event) {
