@@ -7,7 +7,6 @@ import pandas as pd
 from datetime import time
 from src.models.route_models import StopModel
 from src.optimization.route_optimizer import RouteOptimizer
-import streamlit.components.v1 as components
 
 # Optional drag-and-drop support
 try:
@@ -492,7 +491,7 @@ def main():
                                 import traceback
                                 st.text(traceback.format_exc())
 
-                        # Always-on interactive editing and rendering
+                        # Always-on editing with original cards + stop reorder + quick move
                         if st.session_state.get('has_results'):
                             st.divider()
                             # Reset control
@@ -503,100 +502,182 @@ def main():
                                 if 'original_wheelchair_vans_assignments' in st.session_state:
                                     st.session_state['wheelchair_vans_assignments'] = copy.deepcopy(st.session_state['original_wheelchair_vans_assignments'])
                                 st.success("Restored optimized plan.")
+                                st.experimental_rerun()
 
                             name_to_info = st.session_state.get('name_to_info', {})
 
-                            # Removed legacy reassignment expander – all editing is via drag-and-drop
+                            # Render current cards
+                            if st.session_state.get('regular_vans_assignments'):
+                                st.subheader("Regular Van Routes")
+                                render_cards_from_assignments("Regular Van Routes", st.session_state['regular_vans_assignments'], is_wheelchair_section=False)
+                            if st.session_state.get('wheelchair_vans_assignments'):
+                                st.subheader("Wheelchair Van Routes")
+                                render_cards_from_assignments("Wheelchair Van Routes", st.session_state['wheelchair_vans_assignments'], is_wheelchair_section=True)
 
-                            # Build vans payload for the custom sortable board (keeps original card UI)
-                            def build_vans_payload(section_key: str, is_wheelchair: bool):
-                                vans_payload = []
-                                for van in st.session_state.get(section_key, []):
-                                    addr_order = van['address_order']
-                                    stops = []
-                                    for addr in addr_order:
-                                        names = van['addr_to_passengers'].get(addr, [])
-                                        stops.append({ 'address': addr, 'passengers': names })
-                                    # compute duration text live for header
-                                    metrics_optimizer = RouteOptimizer(depot_address, MAX_VAN_CAPACITY, api_key)
-                                    stops_seq = [StopModel(address=s['address'], passengers=s['passengers'], wheelchair=is_wheelchair) for s in stops if s['passengers']]
-                                    metrics = metrics_optimizer.compute_metrics_for_sequence(stops_seq)
-                                    duration_text = format_duration(metrics.get('duration', 0)) if metrics.get('is_feasible', False) else "—"
-                                    vans_payload.append({
-                                        'section': 'wheelchair' if is_wheelchair else 'regular',
-                                        'vehicle_id': van.get('vehicle_id', 0),
-                                        'title': f"Van {van.get('vehicle_id', 0) + 1}",
-                                        'duration_text': duration_text,
-                                        'stops': stops,
-                                    })
-                                return vans_payload
+                            # Stop reordering (per van) using streamlit-sortables
+                            if HAS_SORTABLES:
+                                st.markdown("**Reorder stops (addresses) within each van**")
+                                # Regular vans
+                                for idx_v, van in enumerate(st.session_state.get('regular_vans_assignments', [])):
+                                    st.caption(f"Van {van.get('vehicle_id', 0) + 1} (Regular)")
+                                    current_order = van['address_order']
+                                    new_order = sort_items(current_order, key=f"reg_stop_order_{idx_v}")
+                                    if new_order and new_order != current_order:
+                                        van['address_order'] = [a for a in new_order if a in van['addr_to_passengers']]
+                                        st.success("Stop order updated.")
+                                        st.experimental_rerun()
+                                # Wheelchair vans
+                                for idx_v, van in enumerate(st.session_state.get('wheelchair_vans_assignments', [])):
+                                    st.caption(f"Van {van.get('vehicle_id', 0) + 1} (Wheelchair)")
+                                    current_order = van['address_order']
+                                    new_order = sort_items(current_order, key=f"wc_stop_order_{idx_v}")
+                                    if new_order and new_order != current_order:
+                                        van['address_order'] = [a for a in new_order if a in van['addr_to_passengers']]
+                                        st.success("Stop order updated.")
+                                        st.experimental_rerun()
+                            else:
+                                st.info("Install 'streamlit-sortables' to enable stop reordering.")
 
-                            vans_payload = []
-                            vans_payload.extend(build_vans_payload('regular_vans_assignments', False))
-                            vans_payload.extend(build_vans_payload('wheelchair_vans_assignments', True))
+                            # Quick move (temporary) per van
+                            st.markdown("**Quick move passengers (temporary until full drag-and-drop)**")
+                            def get_bucket(sec: str) -> str:
+                                return 'regular_vans_assignments' if sec == 'regular' else 'wheelchair_vans_assignments'
 
-                            # Inline HTML board (no custom component)
-                            def build_board_html(vans: list[dict]) -> str:
-                                # Build cards exactly like before; enable native DnD in browser only (visual). Backend state remains unchanged.
-                                style = """
-                                <style>
-                                .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
-                                @media (min-width: 900px) { .routes-grid { grid-template-columns: 1fr 1fr; } }
-                                @media (min-width: 1300px) { .routes-grid { grid-template-columns: 1fr 1fr 1fr; } }
-                                .card { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06); }
-                                .card-body { padding: 16px; }
-                                .card-header { display: flex; align-items: center; justify-content: space-between; }
-                                .card-title { font-weight: 700; font-size: 20px; color: #111827; }
-                                .pill { background: #EEF2FF; color: #4338CA; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 9999px; }
-                                .meta { display:flex; align-items:center; color:#6B7280; font-size: 14px; margin-top: 6px; }
-                                .stop { padding-top: 16px; border-top: 1px solid #F3F4F6; }
-                                .stop:first-child { padding-top: 0; border-top: none; }
-                                .stop-row { display:flex; align-items:flex-start; }
-                                .stop-num { background:#E5E7EB; color:#374151; width:32px; height:32px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
-                                .stop-content { margin-left: 12px; width:100%; }
-                                .stop-address { font-weight:600; color:#1F2937; display:flex; align-items:center; gap:8px; }
-                                .passenger { color:#4B5563; margin-top: 4px; display:flex; align-items:center; gap:8px; }
-                                .handle { cursor: grab; user-select: none; color:#6B7280; }
-                                .stop-chips { display:flex; flex-wrap: wrap; gap:8px; margin:8px 0 12px 0; }
-                                .stop-chip { display:inline-block; padding:6px 12px; background:#fecaca; color:#991b1b; border-radius:8px; }
-                                </style>
-                                """
-                                body = ["<div class='routes-grid'>"]
-                                for van in vans:
-                                    stops = van.get('stops', [])
-                                    body.append("<div class='card'><div class='card-body'>")
-                                    body.append(f"<div class='card-header'><div class='card-title'>" + van.get('title','') + f"</div><span class='pill'>{len(stops)} Stops</span></div>")
-                                    body.append(f"<div class='meta'><svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg><span>Estimated time: {van.get('duration_text','—')}</span></div>")
-                                    # chips row
-                                    body.append("<div class='stop-chips' draggable='false'>")
-                                    for s in stops:
-                                        body.append(f"<span class='stop-chip' draggable='true'>{s['address']}</span>")
-                                    body.append("</div>")
-                                    # stops list
-                                    for idx, s in enumerate(stops, start=1):
-                                        body.append("<div class='stop'>")
-                                        body.append("<div class='stop-row'>")
-                                        body.append(f"<div class='stop-num'>{idx}</div>")
-                                        body.append("<div class='stop-content'>")
-                                        body.append(f"<div class='stop-address'><span class='handle'>⋮⋮</span><span>Stop {idx} | {s['address']}</span></div>")
-                                        for p in s.get('passengers', []):
-                                            body.append(f"<div class='passenger'><span class='handle'>⋮⋮</span><span>{p}</span></div>")
-                                        body.append("</div></div></div>")
-                                    body.append("</div></div>")
-                                body.append("</div>")
-                                # Minimal JS for visual-only DnD
-                                script = """
-                                <script>
-                                  // Visual-only drag handles; no backend sync in this inline mode.
-                                  document.querySelectorAll('.stop-chip').forEach(chip => {
-                                    chip.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', 'chip'); });
-                                  });
-                                </script>
-                                """
-                                return style + "".join(body) + script
+                            def list_passengers(van: dict) -> list[tuple[str, str]]:
+                                pairs: list[tuple[str, str]] = []
+                                for addr, names in van['addr_to_passengers'].items():
+                                    for nm in names:
+                                        pairs.append((nm, addr))
+                                return pairs
 
-                            board_html = build_board_html(vans_payload)
-                            components.html(board_html, height=800, scrolling=True)
+                            # Regular vans quick move
+                            for idx_v, van in enumerate(st.session_state.get('regular_vans_assignments', [])):
+                                with st.container():
+                                    st.caption(f"Move from Van {van.get('vehicle_id', 0) + 1} (Regular)")
+                                    options = [f"{nm} — {addr}" for nm, addr in list_passengers(van)]
+                                    if not options:
+                                        continue
+                                    sel = st.selectbox("Passenger", options=options, key=f"reg_move_sel_{idx_v}")
+                                    target_section = st.selectbox("To section", options=["Regular", "Wheelchair"], key=f"reg_move_sec_{idx_v}")
+                                    if target_section == "Regular":
+                                        tgt_bucket = 'regular_vans_assignments'
+                                        tgt_vans = st.session_state.get(tgt_bucket, [])
+                                    else:
+                                        tgt_bucket = 'wheelchair_vans_assignments'
+                                        tgt_vans = st.session_state.get(tgt_bucket, [])
+                                    tgt_indices = [v.get('vehicle_id', 0) + 1 for v in tgt_vans]
+                                    tgt_choice = st.selectbox("To van #", options=tgt_indices or [1], key=f"reg_move_tgt_{idx_v}")
+                                    insert_pos = st.selectbox("Insert position", options=["Beginning", "End"], key=f"reg_move_pos_{idx_v}")
+                                    if st.button("Move", key=f"reg_move_btn_{idx_v}"):
+                                        # Parse selection
+                                        sel_name = sel.split(" — ")[0].strip()
+                                        sel_addr = sel.split(" — ")[1].strip()
+                                        # Remove from source
+                                        if sel_addr in van['addr_to_passengers'] and sel_name in van['addr_to_passengers'][sel_addr]:
+                                            van['addr_to_passengers'][sel_addr].remove(sel_name)
+                                            if not van['addr_to_passengers'][sel_addr]:
+                                                van['addr_to_passengers'].pop(sel_addr, None)
+                                                van['address_order'] = [a for a in van['address_order'] if a != sel_addr]
+                                        # Determine target van
+                                        target_van = None
+                                        for v in tgt_vans:
+                                            if v.get('vehicle_id', 0) + 1 == tgt_choice:
+                                                target_van = v
+                                                break
+                                        if not target_van:
+                                            st.error("Invalid target van")
+                                            st.experimental_rerun()
+                                        # Constraints
+                                        info = name_to_info.get(sel_name, {"address": None, "is_wheelchair": False})
+                                        p_is_wc = bool(info.get('is_wheelchair', False))
+                                        if tgt_bucket == 'regular_vans_assignments' and p_is_wc:
+                                            st.warning("Cannot move a wheelchair passenger into a regular van.")
+                                            st.experimental_rerun()
+                                        if tgt_bucket == 'wheelchair_vans_assignments':
+                                            cnt_regular = 0
+                                            for names in target_van['addr_to_passengers'].values():
+                                                for nm in names:
+                                                    if not name_to_info.get(nm, {}).get('is_wheelchair', False):
+                                                        cnt_regular += 1
+                                            if not p_is_wc and cnt_regular >= 1:
+                                                st.warning("Wheelchair van can carry at most 1 regular passenger.")
+                                                st.experimental_rerun()
+                                        # Add to target
+                                        p_addr = info.get('address')
+                                        if p_addr in target_van['addr_to_passengers']:
+                                            target_van['addr_to_passengers'][p_addr].append(sel_name)
+                                        else:
+                                            target_van['addr_to_passengers'][p_addr] = [sel_name]
+                                            if insert_pos == "Beginning":
+                                                target_van['address_order'] = [p_addr] + target_van['address_order']
+                                            else:
+                                                target_van['address_order'].append(p_addr)
+                                        st.success("Passenger moved.")
+                                        st.experimental_rerun()
+
+                            # Wheelchair vans quick move
+                            for idx_v, van in enumerate(st.session_state.get('wheelchair_vans_assignments', [])):
+                                with st.container():
+                                    st.caption(f"Move from Van {van.get('vehicle_id', 0) + 1} (Wheelchair)")
+                                    options = [f"{nm} — {addr}" for nm, addr in list_passengers(van)]
+                                    if not options:
+                                        continue
+                                    sel = st.selectbox("Passenger", options=options, key=f"wc_move_sel_{idx_v}")
+                                    target_section = st.selectbox("To section", options=["Regular", "Wheelchair"], key=f"wc_move_sec_{idx_v}")
+                                    if target_section == "Regular":
+                                        tgt_bucket = 'regular_vans_assignments'
+                                        tgt_vans = st.session_state.get(tgt_bucket, [])
+                                    else:
+                                        tgt_bucket = 'wheelchair_vans_assignments'
+                                        tgt_vans = st.session_state.get(tgt_bucket, [])
+                                    tgt_indices = [v.get('vehicle_id', 0) + 1 for v in tgt_vans]
+                                    tgt_choice = st.selectbox("To van #", options=tgt_indices or [1], key=f"wc_move_tgt_{idx_v}")
+                                    insert_pos = st.selectbox("Insert position", options=["Beginning", "End"], key=f"wc_move_pos_{idx_v}")
+                                    if st.button("Move", key=f"wc_move_btn_{idx_v}"):
+                                        sel_name = sel.split(" — ")[0].strip()
+                                        sel_addr = sel.split(" — ")[1].strip()
+                                        # Remove from source
+                                        if sel_addr in van['addr_to_passengers'] and sel_name in van['addr_to_passengers'][sel_addr]:
+                                            van['addr_to_passengers'][sel_addr].remove(sel_name)
+                                            if not van['addr_to_passengers'][sel_addr]:
+                                                van['addr_to_passengers'].pop(sel_addr, None)
+                                                van['address_order'] = [a for a in van['address_order'] if a != sel_addr]
+                                        # Determine target van
+                                        target_van = None
+                                        for v in tgt_vans:
+                                            if v.get('vehicle_id', 0) + 1 == tgt_choice:
+                                                target_van = v
+                                                break
+                                        if not target_van:
+                                            st.error("Invalid target van")
+                                            st.experimental_rerun()
+                                        # Constraints
+                                        info = name_to_info.get(sel_name, {"address": None, "is_wheelchair": False})
+                                        p_is_wc = bool(info.get('is_wheelchair', False))
+                                        if tgt_bucket == 'regular_vans_assignments' and p_is_wc:
+                                            st.warning("Cannot move a wheelchair passenger into a regular van.")
+                                            st.experimental_rerun()
+                                        if tgt_bucket == 'wheelchair_vans_assignments':
+                                            cnt_regular = 0
+                                            for names in target_van['addr_to_passengers'].values():
+                                                for nm in names:
+                                                    if not name_to_info.get(nm, {}).get('is_wheelchair', False):
+                                                        cnt_regular += 1
+                                            if not p_is_wc and cnt_regular >= 1:
+                                                st.warning("Wheelchair van can carry at most 1 regular passenger.")
+                                                st.experimental_rerun()
+                                        # Add to target
+                                        p_addr = info.get('address')
+                                        if p_addr in target_van['addr_to_passengers']:
+                                            target_van['addr_to_passengers'][p_addr].append(sel_name)
+                                        else:
+                                            target_van['addr_to_passengers'][p_addr] = [sel_name]
+                                            if insert_pos == "Beginning":
+                                                target_van['address_order'] = [p_addr] + target_van['address_order']
+                                            else:
+                                                target_van['address_order'].append(p_addr)
+                                        st.success("Passenger moved.")
+                                        st.experimental_rerun()
         except Exception as e:
             st.error(f" Failed to read or process master list: {str(e)}")
 
