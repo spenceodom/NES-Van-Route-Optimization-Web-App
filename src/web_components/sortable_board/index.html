@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sortable Board</title>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <style>
+      body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+      .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+      @media (min-width: 900px) { .routes-grid { grid-template-columns: 1fr 1fr; } }
+      @media (min-width: 1300px) { .routes-grid { grid-template-columns: 1fr 1fr 1fr; } }
+      .card { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06); }
+      .card-body { padding: 16px; }
+      .card-header { display: flex; align-items: center; justify-content: space-between; }
+      .card-title { font-weight: 700; font-size: 20px; color: #111827; }
+      .pill { background: #EEF2FF; color: #4338CA; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 9999px; }
+      .meta { display:flex; align-items:center; color:#6B7280; font-size: 14px; margin-top: 6px; }
+      .stop { padding-top: 16px; border-top: 1px solid #F3F4F6; }
+      .stop:first-child { padding-top: 0; border-top: none; }
+      .stop-row { display:flex; align-items:flex-start; }
+      .stop-num { background:#E5E7EB; color:#374151; width:32px; height:32px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
+      .stop-content { margin-left: 12px; width: 100%; }
+      .stop-address { font-weight:600; color:#1F2937; display:flex; align-items:center; gap:8px; }
+      .handle { cursor: grab; user-select: none; color:#6B7280; }
+      .passenger { color:#4B5563; margin-top: 4px; display:flex; align-items:center; gap:8px; }
+      .ghost { opacity: 0.4; }
+      .chosen { background: #F3F4F6; }
+      .drag-container { min-height: 10px; }
+      .passenger-pill { padding: 2px 8px; background: #fee2e2; color: #991b1b; border-radius: 8px; display:inline-block; }
+      .stop-chip { display:inline-block; padding: 6px 12px; background: #fecaca; color:#991b1b; border-radius: 8px; margin-right: 8px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script>
+      const streamlitEvents = {
+        setComponentReady: () => {
+          window.parent.postMessage({ isReady: true, type: "streamlit:componentReady" }, "*");
+        },
+        setFrameHeight: (h) => {
+          window.parent.postMessage({ height: h, type: "streamlit:setFrameHeight" }, "*");
+        },
+        sendData: (data) => {
+          window.parent.postMessage({ isStreamlitMessage: true, type: "streamlit:componentValue", value: data }, "*");
+        },
+      };
+
+      function render(vans) {
+        const root = document.getElementById('root');
+        root.innerHTML = '';
+
+        const grid = document.createElement('div');
+        grid.className = 'routes-grid';
+
+        vans.forEach((van) => {
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.dataset.section = van.section;
+          card.dataset.vehicleId = van.vehicle_id;
+
+          const body = document.createElement('div');
+          body.className = 'card-body';
+
+          const header = document.createElement('div');
+          header.className = 'card-header';
+          const title = document.createElement('div');
+          title.className = 'card-title';
+          title.textContent = van.title;
+          const pill = document.createElement('span');
+          pill.className = 'pill';
+          pill.textContent = `${van.stops.length} Stops`;
+          header.appendChild(title); header.appendChild(pill);
+          body.appendChild(header);
+
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.innerHTML = `<svg class='clock' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'><path stroke-linecap='round' stroke-linejoin='round' d='M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z'/></svg><span>Estimated time: ${van.duration_text || '—'}</span>`;
+          body.appendChild(meta);
+
+          // Stop chips row with sortable for stops
+          const stopChipsRow = document.createElement('div');
+          stopChipsRow.className = 'drag-container';
+          stopChipsRow.style.margin = '8px 0 12px 0';
+          body.appendChild(stopChipsRow);
+
+          // Stops container
+          const stopsContainer = document.createElement('div');
+          body.appendChild(stopsContainer);
+
+          van.stops.forEach((s, idx) => {
+            const chip = document.createElement('span');
+            chip.className = 'stop-chip';
+            chip.textContent = s.address;
+            chip.dataset.address = s.address;
+            stopChipsRow.appendChild(chip);
+
+            const stopDiv = document.createElement('div');
+            stopDiv.className = 'stop';
+            const row = document.createElement('div');
+            row.className = 'stop-row';
+            const num = document.createElement('div');
+            num.className = 'stop-num';
+            num.textContent = (idx+1);
+            const content = document.createElement('div');
+            content.className = 'stop-content';
+            const addressDiv = document.createElement('div');
+            addressDiv.className = 'stop-address';
+            addressDiv.innerHTML = `<span class="handle">⋮⋮</span><span>${s.address}</span>`;
+            content.appendChild(addressDiv);
+
+            // Passenger container
+            const paxContainer = document.createElement('div');
+            paxContainer.className = 'drag-container';
+            paxContainer.dataset.address = s.address;
+            content.appendChild(paxContainer);
+
+            (s.passengers || []).forEach((p) => {
+              const pax = document.createElement('div');
+              pax.className = 'passenger';
+              pax.innerHTML = `<span class="handle">⋮⋮</span><span class="passenger-pill">${p}</span>`;
+              pax.dataset.passenger = p;
+              pax.dataset.address = s.address;
+              paxContainer.appendChild(pax);
+            });
+
+            row.appendChild(num); row.appendChild(content);
+            stopDiv.appendChild(row);
+            stopsContainer.appendChild(stopDiv);
+          });
+
+          card.appendChild(body);
+          grid.appendChild(card);
+
+          // Sortable for stop chips to reorder stops
+          new Sortable(stopChipsRow, {
+            group: `stops-${van.section}-${van.vehicle_id}`,
+            animation: 150,
+            ghostClass: 'ghost',
+            chosenClass: 'chosen',
+            onEnd: () => {
+              const newOrder = Array.from(stopChipsRow.querySelectorAll('.stop-chip')).map(el => el.dataset.address);
+              streamlitEvents.sendData({
+                type: 'reorder_stops',
+                section: van.section,
+                vehicle_id: van.vehicle_id,
+                new_order: newOrder,
+              });
+            }
+          });
+
+          // Sortable for passengers per stop and across vans
+          Array.from(stopsContainer.querySelectorAll('.drag-container')).forEach((container, idx) => {
+            new Sortable(container, {
+              group: 'passengers-global',
+              handle: '.handle',
+              animation: 150,
+              ghostClass: 'ghost',
+              chosenClass: 'chosen',
+              onAdd: (evt) => {
+                const passenger = evt.item.dataset.passenger;
+                const toAddress = container.dataset.address;
+                const toSection = van.section;
+                const toVehicleId = van.vehicle_id;
+                const fromAddress = evt.from.dataset.address || null;
+                const fromCard = evt.from.closest('.card');
+                const fromSection = fromCard ? fromCard.dataset.section : null;
+                const fromVehicleId = fromCard ? parseInt(fromCard.dataset.vehicleId) : null;
+                if (!toAddress) {
+                  // If added to stopChipsRow (creating a new stop at position)
+                  const insertIndex = Array.from(container.parentElement.querySelectorAll('.drag-container')).indexOf(container);
+                  streamlitEvents.sendData({
+                    type: 'create_stop_from_passenger',
+                    to_section: toSection,
+                    to_vehicle_id: toVehicleId,
+                    insert_index: insertIndex,
+                    passenger: passenger,
+                  });
+                } else {
+                  streamlitEvents.sendData({
+                    type: 'move_passenger',
+                    from_section: fromSection,
+                    to_section: toSection,
+                    from_vehicle_id: fromVehicleId,
+                    to_vehicle_id: toVehicleId,
+                    from_address: fromAddress,
+                    to_address: toAddress,
+                    passenger: passenger,
+                  });
+                }
+              },
+              onUpdate: (evt) => {
+                const address = container.dataset.address;
+                if (!address) return;
+                const newOrder = Array.from(container.children).map(el => el.dataset.passenger).filter(Boolean);
+                streamlitEvents.sendData({
+                  type: 'reorder_passengers',
+                  section: van.section,
+                  vehicle_id: van.vehicle_id,
+                  address: address,
+                  new_order: newOrder,
+                });
+              }
+            });
+          });
+        });
+
+        root.appendChild(grid);
+        streamlitEvents.setFrameHeight(document.body.scrollHeight);
+      }
+
+      function onDataFromStreamlit(event) {
+        const msg = event.data;
+        if (msg.type !== "streamlit:render") return;
+        const args = msg.args || {};
+        const vans = args.vans || [];
+        render(vans);
+      }
+
+      window.addEventListener("message", onDataFromStreamlit);
+      streamlitEvents.setComponentReady();
+      streamlitEvents.setFrameHeight(150);
+    </script>
+  </body>
+  </html>
+
+
