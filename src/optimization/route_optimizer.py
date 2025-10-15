@@ -56,19 +56,39 @@ class RouteOptimizer:
                 "address": address,
                 "key": self.api_key
             }
-            response = requests.get(self.base_url, params=params)
-            response.raise_for_status()
-            results = response.json().get("results")
-            if not results:
-                raise ValueError(f"No results found for address: {address}")
+            # Retry transient server errors and network hiccups
+            last_err: Optional[Exception] = None
+            for attempt in range(3):
+                try:
+                    resp = requests.get(self.base_url, params=params, timeout=15)
+                    # Retry on 5xx without parsing body
+                    if 500 <= resp.status_code < 600:
+                        last_err = ValueError(f"Geocode server error (status {resp.status_code})")
+                        continue
 
-            location = results[0].get("geometry", {}).get("location")
-            if not location:
-                raise ValueError(f"Location not found in results for address: {address}")
+                    data = resp.json()
+                    status = data.get("status")
+                    if status != "OK":
+                        err_msg = data.get("error_message") or status or "Unknown error"
+                        raise ValueError(f"Geocoding failed: {err_msg}")
 
-            lat = location["lat"]
-            lng = location["lng"]
-            return (lat, lng)
+                    results = data.get("results") or []
+                    if not results:
+                        raise ValueError(f"No results found for address: {address}")
+
+                    location = results[0].get("geometry", {}).get("location")
+                    if not location:
+                        raise ValueError(f"Location not found in results for address: {address}")
+
+                    lat = location["lat"]
+                    lng = location["lng"]
+                    return (lat, lng)
+                except requests.exceptions.RequestException as e:
+                    # Network/timeout errors -> retry
+                    last_err = e
+                    continue
+            # If we exhausted retries
+            raise ValueError(f"Failed to geocode address '{address}': {last_err}")
 
         def geocode_addresses(self, addresses: List[str]) -> List[Optional[Tuple[float, float]]]:
             """
