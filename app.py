@@ -49,6 +49,25 @@ def format_duration(seconds):
 def main():
     st.title("NES Van Route Optimizer")
 
+    # Results-only mode: when enabled, show only the generated route cards
+    if st.session_state.get("show_results"):
+        regular_grid_html = st.session_state.get("regular_grid_html")
+        wc_grid_html = st.session_state.get("wc_grid_html")
+        if regular_grid_html:
+            st.markdown(regular_grid_html, unsafe_allow_html=True)
+        if wc_grid_html:
+            st.markdown(wc_grid_html, unsafe_allow_html=True)
+
+        if st.button("Start Over"):
+            for k in ["show_results", "regular_grid_html", "wc_grid_html"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+            try:
+                st.rerun()
+            except Exception:
+                st.experimental_rerun()
+        st.stop()
+
     # Optional admin gate controlled by APP_PASSWORD in secrets/env
     required_password = None
     try:
@@ -333,13 +352,9 @@ def main():
 
                             # Optimize regular routes
                             if regular_stops:
-                                st.subheader("Regular Van Routes")
                                 regular_result = optimizer_regular.optimize_route(regular_stops, start_time, number_of_vans)
 
-                                if regular_result['geocoding_errors']:
-                                    st.warning(" Some addresses could not be geocoded:")
-                                    for error in regular_result['geocoding_errors']:
-                                        st.write(f" {error}")
+                                # Suppress non-critical warnings in results-only view
 
                                 if not regular_result['is_feasible']:
                                     st.error(" Could not find feasible routes for regular passengers")
@@ -394,13 +409,10 @@ def main():
 
                                     if regular_cards:
                                         grid_html = "<div class='routes-grid'>" + "".join(regular_cards) + "</div>"
-                                        st.markdown(grid_html, unsafe_allow_html=True)
-
-                                    # No overall totals per requirements
+                                        st.session_state["regular_grid_html"] = grid_html
 
                             # Handle wheelchair routes (separate optimization)
                             if wheelchair_stops:
-                                st.subheader("Wheelchair Van Routes")
                                 # For wheelchair vans, allow all wheelchair passengers plus at most 1 regular passenger per van
                                 wc_capacity = sum(len(s.passengers) for s in wheelchair_stops)
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
@@ -411,9 +423,7 @@ def main():
                                     max_regular_non_wheelchair=1
                                 )
 
-                                if wheelchair_result['geocoding_errors']:
-                                    for error in wheelchair_result['geocoding_errors']:
-                                        st.warning(f"Wheelchair geocoding error: {error}")
+                                # Suppress non-critical warnings in results-only view
 
                                 if wheelchair_result['is_feasible'] and wheelchair_result['vehicle_routes']:
                                     wc_cards: list[str] = []
@@ -458,12 +468,15 @@ def main():
 
                                     if wc_cards:
                                         wc_grid_html = "<div class='routes-grid'>" + "".join(wc_cards) + "</div>"
-                                        st.markdown(wc_grid_html, unsafe_allow_html=True)
-                                else:
-                                    st.write("No wheelchair passengers selected.")
-                            else:
-                                st.subheader("Wheelchair Van Route")
-                                st.write("No wheelchair passengers selected.")
+                                        st.session_state["wc_grid_html"] = wc_grid_html
+
+                            # Enter results-only mode when at least one grid exists
+                            if st.session_state.get("regular_grid_html") or st.session_state.get("wc_grid_html"):
+                                st.session_state["show_results"] = True
+                                try:
+                                    st.rerun()
+                                except Exception:
+                                    st.experimental_rerun()
 
                         except ValueError as ve:
                             st.error(f" Configuration Error: {str(ve)}")
