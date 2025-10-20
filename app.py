@@ -52,6 +52,7 @@ def inject_route_css():
         """
         <style>
         .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        .routes-section { margin-top: 28px; }
         @media (min-width: 900px) { .routes-grid { grid-template-columns: 1fr 1fr; } }
         @media (min-width: 1300px) { .routes-grid { grid-template-columns: 1fr 1fr 1fr; } }
         .card { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06); }
@@ -82,27 +83,8 @@ def inject_route_css():
 def main():
     st.title("NES Van Route Optimizer")
 
-    # Always ensure card CSS is available (also for results-only rerenders)
+    # Always ensure card CSS is available
     inject_route_css()
-
-    # Results-only mode: when enabled, show only the generated route cards
-    if st.session_state.get("show_results"):
-        regular_grid_html = st.session_state.get("regular_grid_html")
-        wc_grid_html = st.session_state.get("wc_grid_html")
-        if regular_grid_html:
-            st.markdown(regular_grid_html, unsafe_allow_html=True)
-        if wc_grid_html:
-            st.markdown(wc_grid_html, unsafe_allow_html=True)
-
-        if st.button("Start Over"):
-            for k in ["show_results", "regular_grid_html", "wc_grid_html"]:
-                if k in st.session_state:
-                    del st.session_state[k]
-            try:
-                st.rerun()
-            except Exception:
-                st.experimental_rerun()
-        st.stop()
 
     # Optional admin gate controlled by APP_PASSWORD in secrets/env
     required_password = None
@@ -415,6 +397,8 @@ def main():
                                     if regular_cards:
                                         grid_html = "<div class='routes-grid'>" + "".join(regular_cards) + "</div>"
                                         st.session_state["regular_grid_html"] = grid_html
+                                        st.markdown("<div class='van-section-title'>Regular Vans</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div class='routes-section'>{grid_html}</div>", unsafe_allow_html=True)
 
                             # Handle wheelchair routes (separate optimization)
                             if wheelchair_stops:
@@ -474,14 +458,19 @@ def main():
                                     if wc_cards:
                                         wc_grid_html = "<div class='routes-grid'>" + "".join(wc_cards) + "</div>"
                                         st.session_state["wc_grid_html"] = wc_grid_html
+                                        st.markdown("<div class='van-section-title'>Wheelchair Vans</div>", unsafe_allow_html=True)
+                                        st.markdown(f"<div class='routes-section'>{wc_grid_html}</div>", unsafe_allow_html=True)
 
-                            # Enter results-only mode when at least one grid exists
+                            # Start over control under results (no page stop)
                             if st.session_state.get("regular_grid_html") or st.session_state.get("wc_grid_html"):
-                                st.session_state["show_results"] = True
-                                try:
-                                    st.rerun()
-                                except Exception:
-                                    st.experimental_rerun()
+                                if st.button("Start Over"):
+                                    for k in ["regular_grid_html", "wc_grid_html"]:
+                                        if k in st.session_state:
+                                            del st.session_state[k]
+                                    try:
+                                        st.rerun()
+                                    except Exception:
+                                        st.experimental_rerun()
 
                         except ValueError as ve:
                             st.error(f" Configuration Error: {str(ve)}")
