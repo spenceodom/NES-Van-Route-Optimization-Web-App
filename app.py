@@ -52,7 +52,7 @@ def inject_route_css():
         """
         <style>
         .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
-        .routes-section { margin-top: 28px; }
+        .routes-section { margin-top: 12px; }
         @media (min-width: 900px) { .routes-grid { grid-template-columns: 1fr 1fr; } }
         @media (min-width: 1300px) { .routes-grid { grid-template-columns: 1fr 1fr 1fr; } }
         .card { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06); }
@@ -74,7 +74,8 @@ def inject_route_css():
         .stop-content { margin-left: 12px; }
         .stop-address { font-weight:600; color:#1F2937; }
         .passenger { color:#4B5563; margin-top: 4px; }
-        .van-section-title { font-weight: 800; font-size: 22px; margin: 8px 0; }
+        .van-section-title { font-weight: 800; font-size: 22px; margin: 8px 0 6px; }
+        .van-section-title.wheelchair { margin-top: 36px; }
         </style>
         """,
         unsafe_allow_html=True
@@ -151,10 +152,8 @@ def main():
         start_time = time(8, 0)
         st.divider()
 
-        # Optional debug toggle (admin only)
+        # Debug mode UI removed; default to False
         debug = False
-        if is_admin:
-            debug = st.checkbox("Debug mode (show tracebacks)", value=False)
 
         # API Key with server-managed fallback (hide UI when managed key exists)
         managed_api_key = None
