@@ -46,8 +46,44 @@ def format_duration(seconds):
     else:
         return f"{minutes}m"
 
+def inject_route_css():
+    """Inject CSS used by the van route cards and grid."""
+    st.markdown(
+        """
+        <style>
+        .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        @media (min-width: 900px) { .routes-grid { grid-template-columns: 1fr 1fr; } }
+        @media (min-width: 1300px) { .routes-grid { grid-template-columns: 1fr 1fr 1fr; } }
+        .card { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06); }
+        .card-body { padding: 16px; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; }
+        .card-title { font-weight: 700; font-size: 20px; color: #111827; }
+        .title-blue { color: #2563EB; }
+        .title-green { color: #16A34A; }
+        .title-red { color: #DC2626; }
+        .title-purple { color: #7C3AED; }
+        .title-amber { color: #D97706; }
+        .pill { background: #EEF2FF; color: #4338CA; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 9999px; }
+        .meta { display:flex; align-items:center; color:#6B7280; font-size: 14px; margin-top: 6px; }
+        .meta .clock { width: 18px; height: 18px; margin-right: 6px; }
+        .stop { padding-top: 16px; border-top: 1px solid #F3F4F6; }
+        .stop:first-child { padding-top: 0; border-top: none; }
+        .stop-row { display:flex; align-items:flex-start; }
+        .stop-num { background:#E5E7EB; color:#374151; width:32px; height:32px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
+        .stop-content { margin-left: 12px; }
+        .stop-address { font-weight:600; color:#1F2937; }
+        .passenger { color:#4B5563; margin-top: 4px; }
+        .van-section-title { font-weight: 800; font-size: 22px; margin: 8px 0; }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 def main():
     st.title("NES Van Route Optimizer")
+
+    # Always ensure card CSS is available (also for results-only rerenders)
+    inject_route_css()
 
     # Results-only mode: when enabled, show only the generated route cards
     if st.session_state.get("show_results"):
@@ -163,37 +199,6 @@ def main():
                 st.success(" API key configured")
 
     st.header("Step 1: Upload Master List")
-    # Card/grid CSS (lightweight, Tailwind-inspired)
-    st.markdown(
-        """
-        <style>
-        .routes-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
-        @media (min-width: 900px) { .routes-grid { grid-template-columns: 1fr 1fr; } }
-        @media (min-width: 1300px) { .routes-grid { grid-template-columns: 1fr 1fr 1fr; } }
-        .card { background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06); }
-        .card-body { padding: 16px; }
-        .card-header { display: flex; align-items: center; justify-content: space-between; }
-        .card-title { font-weight: 700; font-size: 20px; color: #111827; }
-        .title-blue { color: #2563EB; }
-        .title-green { color: #16A34A; }
-        .title-red { color: #DC2626; }
-        .title-purple { color: #7C3AED; }
-        .title-amber { color: #D97706; }
-        .pill { background: #EEF2FF; color: #4338CA; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 9999px; }
-        .meta { display:flex; align-items:center; color:#6B7280; font-size: 14px; margin-top: 6px; }
-        .meta .clock { width: 18px; height: 18px; margin-right: 6px; }
-        .stop { padding-top: 16px; border-top: 1px solid #F3F4F6; }
-        .stop:first-child { padding-top: 0; border-top: none; }
-        .stop-row { display:flex; align-items:flex-start; }
-        .stop-num { background:#E5E7EB; color:#374151; width:32px; height:32px; border-radius:9999px; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0; }
-        .stop-content { margin-left: 12px; }
-        .stop-address { font-weight:600; color:#1F2937; }
-        .passenger { color:#4B5563; margin-top: 4px; }
-        .van-section-title { font-weight: 800; font-size: 22px; margin: 8px 0; }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
     master_file = st.file_uploader(
         "Upload Master List CSV (name, address, wheelchair)",
         type=['csv'],
