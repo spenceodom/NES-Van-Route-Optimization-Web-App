@@ -213,7 +213,9 @@ class RouteOptimizer:
         start_time,
         num_vehicles: int = 1,
         max_regular_non_wheelchair: Optional[int] = None,
-        vehicle_capacities: Optional[List[int]] = None
+        vehicle_capacities: Optional[List[int]] = None,
+        regular_non_wheelchair_capacities: Optional[List[int]] = None,
+        wheelchair_capacities: Optional[List[int]] = None
     ) -> Dict[str, Any]:
         """
         Optimize routes for multiple vehicles using real addresses and Google Maps
@@ -264,7 +266,12 @@ class RouteOptimizer:
             )
 
             # Step 3: Run optimization
-            if num_vehicles == 1:
+            has_per_vehicle_caps = any([
+                vehicle_capacities is not None,
+                regular_non_wheelchair_capacities is not None,
+                wheelchair_capacities is not None,
+            ])
+            if num_vehicles == 1 and not has_per_vehicle_caps:
                 # Single vehicle - use TSP
                 result = self._optimize_single_vehicle(
                     distance_matrix,
@@ -280,7 +287,9 @@ class RouteOptimizer:
                     valid_stops,
                     num_vehicles,
                     max_regular_non_wheelchair=max_regular_non_wheelchair,
-                    vehicle_capacities=vehicle_capacities
+                    vehicle_capacities=vehicle_capacities,
+                    regular_non_wheelchair_capacities=regular_non_wheelchair_capacities,
+                    wheelchair_capacities=wheelchair_capacities
                 )
 
             # Add geocoding errors to result
@@ -447,7 +456,9 @@ class RouteOptimizer:
         stops: List[StopModel],
         num_vehicles: int,
         max_regular_non_wheelchair: Optional[int] = None,
-        vehicle_capacities: Optional[List[int]] = None
+        vehicle_capacities: Optional[List[int]] = None,
+        regular_non_wheelchair_capacities: Optional[List[int]] = None,
+        wheelchair_capacities: Optional[List[int]] = None
     ) -> Dict[str, Any]:
         """
         Optimize routes for multiple vehicles (VRP)
@@ -488,7 +499,7 @@ class RouteOptimizer:
             )
 
             # Optionally add a second capacity dimension to limit non-wheelchair passengers per vehicle
-            if max_regular_non_wheelchair is not None:
+            if (regular_non_wheelchair_capacities is not None and len(regular_non_wheelchair_capacities) == num_vehicles) or (max_regular_non_wheelchair is not None):
                 def regular_demand_callback(from_index):
                     from_node = manager.IndexToNode(from_index)
                     if from_node == 0:
@@ -500,9 +511,27 @@ class RouteOptimizer:
                 routing.AddDimensionWithVehicleCapacity(
                     regular_demand_index,
                     0,
-                    [max_regular_non_wheelchair] * num_vehicles,
+                    (regular_non_wheelchair_capacities if regular_non_wheelchair_capacities is not None and len(regular_non_wheelchair_capacities) == num_vehicles else [max_regular_non_wheelchair] * num_vehicles),
                     True,
                     'RegularFrontSeat'
+                )
+
+            # Optionally add a wheelchair seats dimension to limit wheelchair riders per vehicle
+            if wheelchair_capacities is not None and len(wheelchair_capacities) == num_vehicles:
+                def wheelchair_demand_callback(from_index):
+                    from_node = manager.IndexToNode(from_index)
+                    if from_node == 0:
+                        return 0
+                    stop = stops[from_node - 1]
+                    return len(stop.passengers) if stop.wheelchair else 0
+
+                wheelchair_demand_index = routing.RegisterUnaryTransitCallback(wheelchair_demand_callback)
+                routing.AddDimensionWithVehicleCapacity(
+                    wheelchair_demand_index,
+                    0,
+                    wheelchair_capacities,
+                    True,
+                    'WheelchairSeats'
                 )
 
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()

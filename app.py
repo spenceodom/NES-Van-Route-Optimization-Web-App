@@ -160,6 +160,32 @@ def main():
                 key=f"reg_cap_{i}"
             )
             regular_capacities.append(int(cap))
+
+        # Per-van capacity controls for wheelchair vans
+        wheelchair_regular_caps: list[int] = []
+        wheelchair_wheelchair_caps: list[int] = []
+        if number_of_wheelchair_vans > 0:
+            st.markdown("**Wheelchair Van Capacities**")
+            for i in range(number_of_wheelchair_vans):
+                cols_wc = st.columns(2)
+                with cols_wc[0]:
+                    rcap = st.number_input(
+                        f"WC Van {i+1} regular seats",
+                        min_value=0,
+                        max_value=14,
+                        value=1,
+                        key=f"wc_reg_cap_{i}"
+                    )
+                with cols_wc[1]:
+                    wcap = st.number_input(
+                        f"WC Van {i+1} wheelchair seats",
+                        min_value=0,
+                        max_value=6,
+                        value=10 - int(rcap) if 10 - int(rcap) >= 0 else 0,
+                        key=f"wc_wc_cap_{i}"
+                    )
+                wheelchair_regular_caps.append(int(rcap))
+                wheelchair_wheelchair_caps.append(int(wcap))
         # Fixed route start time (time selection removed)
         start_time = time(8, 0)
         st.divider()
@@ -268,7 +294,9 @@ def main():
                     if number_of_wheelchair_vans > 0 and len(regular_grouped) > 0 and wheelchair_stops:
                         # Take the first regular passenger for wheelchair van
                         first_regular_row = regular_grouped.iloc[0]
-                        wheelchair_van_regular_passenger = first_regular_row['name'][0]  # First passenger from first address
+                        # Decide how many regular riders can be moved to wheelchair vans based on regular seat capacity
+                        total_wc_regular_seats = sum(wheelchair_regular_caps) if wheelchair_regular_caps else 1
+                        wheelchair_van_regular_passenger = first_regular_row['name'][0] if total_wc_regular_seats > 0 else None
                         
                         # Remove this passenger from regular processing
                         remaining_regular_names = []
@@ -422,7 +450,10 @@ def main():
                                     wheelchair_stops,
                                     start_time,
                                     number_of_wheelchair_vans,
-                                    max_regular_non_wheelchair=1
+                                    max_regular_non_wheelchair=None,
+                                    vehicle_capacities=None,
+                                    regular_non_wheelchair_capacities=wheelchair_regular_caps if wheelchair_regular_caps else None,
+                                    wheelchair_capacities=wheelchair_wheelchair_caps if wheelchair_wheelchair_caps else None
                                 )
 
                                 # Suppress non-critical warnings in results-only view
