@@ -498,6 +498,15 @@ class RouteOptimizer:
                 'Capacity'
             )
 
+            # If there are at least as many stops as vehicles, require each vehicle
+            # to serve at least one stop by enforcing a minimum load of 1.
+            if len(stops) >= num_vehicles:
+                capacity_dim = routing.GetDimensionOrDie('Capacity')
+                for v in range(num_vehicles):
+                    end_var = capacity_dim.CumulVar(routing.End(v))
+                    # Lower bound 1, upper bound remains capacity of vehicle
+                    end_var.SetRange(1, capacities[v])
+
             # Optionally add a second capacity dimension to limit non-wheelchair passengers per vehicle
             if (regular_non_wheelchair_capacities is not None and len(regular_non_wheelchair_capacities) == num_vehicles) or (max_regular_non_wheelchair is not None):
                 def regular_demand_callback(from_index):

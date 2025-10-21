@@ -186,15 +186,35 @@ def main():
                         default_wcap = 0
                     if default_wcap > max_wcap:
                         default_wcap = max_wcap
-                    wcap = st.number_input(
-                        f"WC Van {i+1} wheelchair seats",
-                        min_value=0,
-                        max_value=max_wcap,
-                        value=default_wcap,
-                        step=1,
-                        format="%d",
-                        key=f"wc_wc_cap_{i}"
-                    )
+
+                    wc_key = f"wc_wc_cap_{i}"
+                    # Initialize session state for custom +/- control
+                    if wc_key not in st.session_state:
+                        st.session_state[wc_key] = int(default_wcap)
+                    else:
+                        # Clamp to bounds
+                        try:
+                            st.session_state[wc_key] = int(st.session_state[wc_key])
+                        except Exception:
+                            st.session_state[wc_key] = int(default_wcap)
+                        st.session_state[wc_key] = max(0, min(max_wcap, st.session_state[wc_key]))
+
+                    minus_col, val_col, plus_col = st.columns([1, 3, 1])
+                    if minus_col.button("-", key=f"wc_dec_{i}"):
+                        st.session_state[wc_key] = max(0, st.session_state[wc_key] - 1)
+                    if plus_col.button("+", key=f"wc_inc_{i}"):
+                        st.session_state[wc_key] = min(max_wcap, st.session_state[wc_key] + 1)
+
+                    with val_col:
+                        wcap = st.number_input(
+                            f"WC Van {i+1} wheelchair seats",
+                            min_value=0,
+                            max_value=max_wcap,
+                            value=int(st.session_state[wc_key]),
+                            step=1,
+                            format="%d",
+                            key=wc_key
+                        )
                 wheelchair_regular_caps.append(int(rcap))
                 wheelchair_wheelchair_caps.append(int(wcap))
         # Fixed route start time (time selection removed)
