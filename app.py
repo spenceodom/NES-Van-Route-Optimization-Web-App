@@ -177,11 +177,18 @@ def main():
                         key=f"wc_reg_cap_{i}"
                     )
                 with cols_wc[1]:
+                    # Clamp default wheelchair seats so it never exceeds the max
+                    max_wcap = 10
+                    default_wcap = 10 - int(rcap)
+                    if default_wcap < 0:
+                        default_wcap = 0
+                    if default_wcap > max_wcap:
+                        default_wcap = max_wcap
                     wcap = st.number_input(
                         f"WC Van {i+1} wheelchair seats",
                         min_value=0,
-                        max_value=6,
-                        value=10 - int(rcap) if 10 - int(rcap) >= 0 else 0,
+                        max_value=max_wcap,
+                        value=default_wcap,
                         key=f"wc_wc_cap_{i}"
                     )
                 wheelchair_regular_caps.append(int(rcap))
