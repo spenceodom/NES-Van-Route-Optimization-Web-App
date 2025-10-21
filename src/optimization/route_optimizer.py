@@ -212,7 +212,8 @@ class RouteOptimizer:
         stops: List[StopModel],
         start_time,
         num_vehicles: int = 1,
-        max_regular_non_wheelchair: Optional[int] = None
+        max_regular_non_wheelchair: Optional[int] = None,
+        vehicle_capacities: Optional[List[int]] = None
     ) -> Dict[str, Any]:
         """
         Optimize routes for multiple vehicles using real addresses and Google Maps
@@ -278,7 +279,8 @@ class RouteOptimizer:
                     duration_matrix,
                     valid_stops,
                     num_vehicles,
-                    max_regular_non_wheelchair=max_regular_non_wheelchair
+                    max_regular_non_wheelchair=max_regular_non_wheelchair,
+                    vehicle_capacities=vehicle_capacities
                 )
 
             # Add geocoding errors to result
@@ -444,7 +446,8 @@ class RouteOptimizer:
         duration_matrix: List[List[Optional[int]]],
         stops: List[StopModel],
         num_vehicles: int,
-        max_regular_non_wheelchair: Optional[int] = None
+        max_regular_non_wheelchair: Optional[int] = None,
+        vehicle_capacities: Optional[List[int]] = None
     ) -> Dict[str, Any]:
         """
         Optimize routes for multiple vehicles (VRP)
@@ -475,10 +478,11 @@ class RouteOptimizer:
                 return len(stops[from_node - 1].passengers)
 
             demand_callback_index = routing.RegisterUnaryTransitCallback(demand_callback)
+            capacities = vehicle_capacities if vehicle_capacities is not None and len(vehicle_capacities) == num_vehicles else [self.vehicle_capacity] * num_vehicles
             routing.AddDimensionWithVehicleCapacity(
                 demand_callback_index,
                 0,  # null capacity slack
-                [self.vehicle_capacity] * num_vehicles,  # vehicle maximum capacities
+                capacities,  # vehicle maximum capacities
                 True,  # start cumul to zero
                 'Capacity'
             )

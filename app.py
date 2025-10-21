@@ -143,11 +143,23 @@ def main():
         )
         number_of_wheelchair_vans = st.slider(
             "Number of Wheelchair Vans",
-            min_value=1,
+            min_value=0,
             max_value=4,
             value=1,
             help="How many wheelchair vans are available for this route?"
         )
+        # Per-van capacity controls for regular vans
+        st.markdown("**Regular Van Capacities**")
+        regular_capacities: list[int] = []
+        for i in range(number_of_vans):
+            cap = st.number_input(
+                f"Capacity for Regular Van {i+1}",
+                min_value=1,
+                max_value=15,
+                value=MAX_VAN_CAPACITY,
+                key=f"reg_cap_{i}"
+            )
+            regular_capacities.append(int(cap))
         # Fixed route start time (time selection removed)
         start_time = time(8, 0)
         st.divider()
@@ -239,6 +251,9 @@ def main():
                 
                 # Process wheelchair passengers (all go to wheelchair van)
                 if not wheelchair_df.empty:
+                    if number_of_wheelchair_vans == 0:
+                        st.error(" Wheelchair passengers selected but wheelchair vans set to 0. Please increase wheelchair vans or deselect wheelchair passengers.")
+                        return
                     wc_grouped = wheelchair_df.groupby('address')['name'].apply(list).reset_index()
                     for _, row in wc_grouped.iterrows():
                         wheelchair_stops.append(StopModel(address=row['address'], passengers=row['name'], wheelchair=True))
@@ -249,8 +264,8 @@ def main():
                     regular_grouped = regular_df.groupby('address')['name'].apply(list).reset_index()
                     
                     # Check if we can move 1 regular passenger to wheelchair van
-                    # (only if wheelchair van exists and has capacity)
-                    if wheelchair_stops and len(regular_grouped) > 0:
+                    # (only if at least 1 wheelchair van exists)
+                    if number_of_wheelchair_vans > 0 and len(regular_grouped) > 0 and wheelchair_stops:
                         # Take the first regular passenger for wheelchair van
                         first_regular_row = regular_grouped.iloc[0]
                         wheelchair_van_regular_passenger = first_regular_row['name'][0]  # First passenger from first address
@@ -287,19 +302,20 @@ def main():
                         wheelchair=False
                     ))
                 
-                # Check capacity constraints for regular vans
-                over_capacity = [s for s in regular_stops if len(s.passengers) > MAX_VAN_CAPACITY]
+                # Check per-stop capacity feasibility using the largest available regular van
+                max_regular_capacity = max(regular_capacities) if regular_capacities else MAX_VAN_CAPACITY
+                over_capacity = [s for s in regular_stops if len(s.passengers) > max_regular_capacity]
                 if over_capacity:
-                    st.error(f" One or more stops have more than {MAX_VAN_CAPACITY} passengers. Please adjust your selection.")
+                    st.error(f" One or more stops exceed your van capacity (max {max_regular_capacity}). Please adjust selections or increase capacities.")
                     for s in over_capacity:
                         st.warning(f"Address: {s.address} has {len(s.passengers)} passengers.")
                     return
                 
                 # Check if total regular demand can be met with available vans
                 total_regular_passengers = sum(len(s.passengers) for s in regular_stops)
-                min_vans_needed = (total_regular_passengers + MAX_VAN_CAPACITY - 1) // MAX_VAN_CAPACITY if total_regular_passengers > 0 else 0
-                if min_vans_needed > number_of_vans:
-                    st.error(f" Not enough vans. {min_vans_needed} vans needed for {total_regular_passengers} regular passengers (max {MAX_VAN_CAPACITY} per van), but only {number_of_vans} vans available.")
+                total_capacity_available = sum(regular_capacities) if regular_capacities else number_of_vans * MAX_VAN_CAPACITY
+                if total_regular_passengers > total_capacity_available:
+                    st.error(f" Not enough total capacity. Need {total_regular_passengers}, but vans can carry {total_capacity_available}. Increase van count or capacities.")
                     return
                 
                 # Show passenger summary
@@ -325,20 +341,18 @@ def main():
                     with st.spinner(" Optimizing routes..."):
                         try:
                             # Initialize optimizer with API key
-                            # Force utilization of all available regular vans by tightening per-vehicle capacity
-                            if regular_stops:
-                                total_regular_passengers = sum(len(s.passengers) for s in regular_stops)
-                                max_stop_load = max((len(s.passengers) for s in regular_stops), default=0)
-                                forced_capacity = max(1, max_stop_load, math.ceil(total_regular_passengers / max(1, number_of_vans)))
-                                forced_capacity = min(MAX_VAN_CAPACITY, forced_capacity)
-                            else:
-                                forced_capacity = MAX_VAN_CAPACITY
-
-                            optimizer_regular = RouteOptimizer(depot_address, forced_capacity, api_key)
+                            # Use user-defined per-van capacities when provided
+                            effective_capacity = max(regular_capacities) if regular_capacities else MAX_VAN_CAPACITY
+                            optimizer_regular = RouteOptimizer(depot_address, effective_capacity, api_key)
 
                             # Optimize regular routes
                             if regular_stops:
-                                regular_result = optimizer_regular.optimize_route(regular_stops, start_time, number_of_vans)
+                                regular_result = optimizer_regular.optimize_route(
+                                    regular_stops,
+                                    start_time,
+                                    number_of_vans,
+                                    vehicle_capacities=regular_capacities if regular_capacities else None
+                                )
 
                                 # Suppress non-critical warnings in results-only view
 
@@ -400,7 +414,7 @@ def main():
                                         st.markdown(f"<div class='routes-section'>{grid_html}</div>", unsafe_allow_html=True)
 
                             # Handle wheelchair routes (separate optimization)
-                            if wheelchair_stops:
+                            if number_of_wheelchair_vans > 0 and wheelchair_stops:
                                 # For wheelchair vans, allow all wheelchair passengers plus at most 1 regular passenger per van
                                 wc_capacity = sum(len(s.passengers) for s in wheelchair_stops)
                                 optimizer_wheelchair = RouteOptimizer(depot_address, max(1, wc_capacity), api_key)
