@@ -174,8 +174,6 @@ def main():
                         min_value=0,
                         max_value=14,
                         value=1,
-                        step=1,
-                        format="%d",
                         key=f"wc_reg_cap_{i}"
                     )
                 with cols_wc[1]:
@@ -192,8 +190,6 @@ def main():
                         min_value=0,
                         max_value=max_wcap,
                         value=int(default_wcap),
-                        step=1,
-                        format="%d",
                         key=f"wc_wc_cap_{i}"
                     )
                 wheelchair_regular_caps.append(int(rcap))
