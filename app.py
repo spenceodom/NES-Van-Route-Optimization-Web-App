@@ -174,12 +174,14 @@ def main():
                         min_value=0,
                         max_value=14,
                         value=1,
+                        step=1,
+                        format="%d",
                         key=f"wc_reg_cap_{i}"
                     )
                 with cols_wc[1]:
                     # Clamp default wheelchair seats so it never exceeds the max
                     max_wcap = 10
-                    default_wcap = 10 - int(rcap)
+                    default_wcap = 5 if i == 0 else 10 - int(rcap)
                     if default_wcap < 0:
                         default_wcap = 0
                     if default_wcap > max_wcap:
@@ -189,6 +191,8 @@ def main():
                         min_value=0,
                         max_value=max_wcap,
                         value=default_wcap,
+                        step=1,
+                        format="%d",
                         key=f"wc_wc_cap_{i}"
                     )
                 wheelchair_regular_caps.append(int(rcap))
