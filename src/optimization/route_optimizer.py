@@ -503,13 +503,15 @@ class RouteOptimizer:
             if len(stops) >= num_vehicles:
                 capacity_dim = routing.GetDimensionOrDie('Capacity')
                 for v in range(num_vehicles):
-                    end_var = capacity_dim.CumulVar(routing.End(v))
+                    end_index = routing.End(v)
                     # Soft lower bound keeps feasibility if the solver can't use all vehicles.
                     if hasattr(capacity_dim, "SetCumulVarSoftLowerBound"):
-                        capacity_dim.SetCumulVarSoftLowerBound(end_var, 1, 100000)
-                    else:
-                        # Fallback to hard lower bound if soft bounds unavailable.
-                        end_var.SetRange(1, capacities[v])
+                        try:
+                            capacity_dim.SetCumulVarSoftLowerBound(end_index, 1, 100000)
+                            continue
+                        except Exception as e:
+                            logger.warning(f"Failed to set soft lower bound for vehicle {v}: {e}")
+                    # If soft bounds are unavailable, skip forcing usage to preserve feasibility.
 
             # Optionally add a second capacity dimension to limit non-wheelchair passengers per vehicle
             if (regular_non_wheelchair_capacities is not None and len(regular_non_wheelchair_capacities) == num_vehicles) or (max_regular_non_wheelchair is not None):
@@ -641,5 +643,8 @@ class RouteOptimizer:
                 'route_sequence': [],
                 'total_distance': 0,
                 'is_feasible': False,
-                'vehicle_routes': []
+                'vehicle_routes': [],
+                'debug': {
+                    'error': str(e)
+                }
             }
