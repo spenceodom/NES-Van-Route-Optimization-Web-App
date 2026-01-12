@@ -351,7 +351,7 @@ class RouteOptimizer:
                 # Handle None values in duration matrix
                 duration = duration_matrix[from_node][to_node]
                 if duration is None:
-                    return 999999  # Large penalty for unreachable locations
+                    return 10**9  # Large penalty for unreachable locations
                 return int(duration)
 
             transit_callback_index = routing.RegisterTransitCallback(duration_cost_callback)
@@ -392,7 +392,7 @@ class RouteOptimizer:
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
             search_parameters.first_solution_strategy = (
                 routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
-            search_parameters.time_limit.seconds = 10
+            search_parameters.time_limit.seconds = 15
 
             solution = routing.SolveWithParameters(search_parameters)
 
@@ -475,7 +475,7 @@ class RouteOptimizer:
 
                 duration = duration_matrix[from_node][to_node]
                 if duration is None:
-                    return 999999
+                    return 10**9  # Large penalty for unreachable locations
                 return int(duration)
 
             transit_callback_index = routing.RegisterTransitCallback(duration_cost_callback)
@@ -543,12 +543,26 @@ class RouteOptimizer:
                     'WheelchairSeats'
                 )
 
+            # Add time dimension for load balancing across vehicles
+            try:
+                routing.AddDimension(
+                    transit_callback_index,
+                    0,           # no waiting/slack
+                    10**7,       # large upper bound on per-vehicle time
+                    True,        # start cumul to zero
+                    'Time'
+                )
+                time_dimension = routing.GetDimensionOrDie('Time')
+                time_dimension.SetGlobalSpanCostCoefficient(100)
+            except Exception as e:
+                logger.warning(f"Failed to add time dimension for balancing: {e}")
+
             search_parameters = pywrapcp.DefaultRoutingSearchParameters()
             search_parameters.first_solution_strategy = (
                 routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION)
             search_parameters.local_search_metaheuristic = (
                 routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH)
-            search_parameters.time_limit.seconds = 15
+            search_parameters.time_limit.seconds = 30
 
             solution = routing.SolveWithParameters(search_parameters)
 
