@@ -394,6 +394,12 @@ def main():
 
                                 if not regular_result['is_feasible']:
                                     st.error(" Could not find feasible routes for regular passengers")
+                                    geocode_errors = regular_result.get("geocoding_errors") or []
+                                    if geocode_errors:
+                                        st.warning(" Geocoding issues detected for regular routes:")
+                                        st.code("\n".join(geocode_errors))
+                                    else:
+                                        st.info(" No geocoding errors reported for regular routes.")
                                 else:
                                     # Display optimized routes as a single grid HTML block
                                     total_distance = 0
