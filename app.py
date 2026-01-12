@@ -400,6 +400,10 @@ def main():
                                         st.code("\n".join(geocode_errors))
                                     else:
                                         st.info(" No geocoding errors reported for regular routes.")
+                                    debug_info = regular_result.get("debug")
+                                    if debug_info:
+                                        with st.expander("Regular route diagnostics"):
+                                            st.json(debug_info)
                                 else:
                                     # Display optimized routes as a single grid HTML block
                                     total_distance = 0

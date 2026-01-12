@@ -567,11 +567,23 @@ class RouteOptimizer:
             solution = routing.SolveWithParameters(search_parameters)
 
             if not solution:
+                def _count_none(matrix: List[List[Optional[int]]]) -> int:
+                    return sum(1 for row in matrix for val in row if val is None)
+
                 return {
                     'route_sequence': [],
                     'total_distance': 0,
                     'is_feasible': False,
-                    'vehicle_routes': []
+                    'vehicle_routes': [],
+                    'debug': {
+                        'solver_status': routing.status(),
+                        'num_stops': len(stops),
+                        'num_vehicles': num_vehicles,
+                        'capacities': capacities,
+                        'demands': [len(stop.passengers) for stop in stops],
+                        'distance_none_count': _count_none(distance_matrix),
+                        'duration_none_count': _count_none(duration_matrix),
+                    }
                 }
 
             # Extract routes for each vehicle
