@@ -120,11 +120,11 @@ def main():
         st.markdown("**Day Program Address**")
         depot_option = st.radio(
             " ",
-            ("Day Program", "Other"),
+            ("South Valley", "Other"),
             index=0,
             label_visibility="collapsed"
         )
-        if depot_option == "Day Program":
+        if depot_option == "South Valley":
             depot_address = "10404 1055 W, South Jordan, UT 84095"
             st.info(f"Day Program address set to: {depot_address}")
         else:
