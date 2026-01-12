@@ -320,14 +320,8 @@ def main():
                     with st.spinner(" Optimizing routes..."):
                         try:
                             # Initialize optimizer with API key
-                            # Force utilization of all available regular vans by tightening per-vehicle capacity
-                            if regular_stops:
-                                total_regular_passengers = sum(len(s.passengers) for s in regular_stops)
-                                max_stop_load = max((len(s.passengers) for s in regular_stops), default=0)
-                                forced_capacity = max(1, max_stop_load, math.ceil(total_regular_passengers / max(1, number_of_vans)))
-                                forced_capacity = min(MAX_VAN_CAPACITY, forced_capacity)
-                            else:
-                                forced_capacity = MAX_VAN_CAPACITY
+                            # Force utilization logic REMOVED to avoid strict bin-packing failures
+                            forced_capacity = MAX_VAN_CAPACITY
 
                             optimizer_regular = RouteOptimizer(depot_address, forced_capacity, api_key)
 
